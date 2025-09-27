@@ -25,6 +25,9 @@ cd bitnet_kernels
 bash compile.sh
 cd ..
 
+# specify GPU no.
+export CUDA_VISIBLE_DEVICES=7
+
 # Run performance tests
 python test.py
 ```
