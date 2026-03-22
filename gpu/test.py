@@ -57,7 +57,35 @@ def xorshift32(seed):
     x ^= (x << 5) & 0xFFFFFFFF
     return x & 0xFFFFFFFF
 
-# Obsolete
+
+
+def prepare_w_map_fast(m, k, n, s):
+    stream = torch.cuda.current_stream()
+    w = torch.zeros((k, n), dtype=torch.int8, device='cuda')
+    w_map = torch.zeros((s // 2, n), dtype=torch.int16 ,device='cuda')
+    w_map_negative = torch.zeros((s // 2, n), dtype=torch.int16, device='cuda')
+    def alloc_div(div_nim):
+        rows = div_nim * n
+        cols = s // 2 // div_nim
+        return torch.zeros((rows, cols), dtype=torch.int16, device='cuda')
+    w_map_32_div = alloc_div(32)
+    w_map_negative_32_div = alloc_div(32)
+
+    bitnet_lib.prepare_w_map(*[
+        ctypes.c_void_p(w.data_ptr()),
+        ctypes.c_void_p(w_map.data_ptr()),
+        ctypes.c_void_p(w_map_negative.data_ptr()),
+        ctypes.c_void_p(w_map_32_div.data_ptr()),
+        ctypes.c_void_p(w_map_negative_32_div.data_ptr()),
+        ctypes.c_int(m),
+        ctypes.c_int(k),
+        ctypes.c_int(n),
+        ctypes.c_int(s),
+        ctypes.c_void_p(stream.cuda_stream)])
+
+    return w_map_32_div, w_map_negative_32_div
+
+# Obsolete and slow
 def prepare_w_map(m, k, n, s):
     w = torch.zeros((k, n), dtype=torch.int8)
     w_map = torch.zeros((s // 2, n), dtype=torch.int16)
@@ -67,9 +95,9 @@ def prepare_w_map(m, k, n, s):
         rows = div_nim * n
         cols = s // 2 // div_nim
         return torch.zeros((rows, cols), dtype=torch.int16)
+
     w_map_32_div = alloc_div(32)
     w_map_negative_32_div = alloc_div(32)
-
 
     for col in tqdm(range(n)):
         w[:, col] = 0
@@ -120,7 +148,7 @@ if __name__ == '__main__':
         weight_scale = torch.ones(1, dtype=torch.bfloat16, device='cuda')
         weight_compressed = convert_weight_int8_to_int2(weight).to('cuda')
 
-        w_map_32_div, w_map_negative_32_div = prepare_w_map(1, K, N, 4096)
+        w_map_32_div, w_map_negative_32_div = prepare_w_map_fast(1, K, N, 4096)
 
         for i in range(1):
             input0 = torch.randint(-128,127,(1, K),dtype=torch.int8, device='cuda')
