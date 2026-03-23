@@ -60,7 +60,16 @@ extern "C" void sptmm(char* X_d, unsigned short* W_map_32_div_d, unsigned short*
         rowWiseSplit3Small4<1, 6912, 2560, 2048, 32><<< 2560 / 1, dim3(32,1,1), 0, stream >>>(X_d, W_map_32_div_d,W_map_negative_32_div_d, c_d);
     }else if(M == 1 && K == 6912 && N == 2560 && S == 1024) {
         rowWiseSplit3Small4< 1, 6912, 2560, 1024, 32 ><<< 2560 / 1, dim3(32, 1, 1), 0, stream >>>(X_d, W_map_32_div_d,W_map_negative_32_div_d, c_d);
-    }else{
+
+    }else if(M == 1 && K == 2560 && N == 13824 && S == 1536){
+        rowWiseSplit3Small4 < 1, 2560, 13824, 1536, 32 ><<< dim3(13824, 1, 1), dim3(32, 1, 1), 0, stream >>>(X_d, W_map_32_div_d,W_map_negative_32_div_d, c_d);
+    }else if(M == 1 && K == 2560 && N == 2560 && S == 1536) {
+        rowWiseSplit3Small4 < 1, 2560, 2560, 1536, 32 ><<< dim3(2560, 1, 1), dim3(32, 1, 1), 0, stream >>>(X_d, W_map_32_div_d,W_map_negative_32_div_d, c_d);
+    }else if(M == 1 && K == 2560 && N == 3840 && S == 1536) {
+        checkKernelErrors((rowWiseSplit3Small4 < 1, 2560, 3840, 1536, 32 ><<< dim3(3840, 1, 1), dim3(32, 1, 1), 0, stream >>>(X_d, W_map_32_div_d,W_map_negative_32_div_d, c_d);
+    }
+
+    else{
         std::cout << "required ladder gemm kernel: M " << M << ", N " << N << ", K " << K << std::endl;
     }
 }
