@@ -47,6 +47,7 @@ class ModelArgs:
     norm_eps: float = 1e-5
     rope_theta: float = 500000.0
     use_kernel: bool = False
+    use_sptmm: bool = False
 
 
 LayerCache = Tuple[torch.Tensor, torch.Tensor]
