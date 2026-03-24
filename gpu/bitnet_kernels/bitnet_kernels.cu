@@ -1,5 +1,6 @@
 #include "bitnet_kernels.h"
 #include "sptmm.h"
+#include <stdlib.h>
 
 extern "C" void bitlinear_int8xint2(int8_t* input0, int8_t* input1, __nv_bfloat16* output0, __nv_bfloat16* s, __nv_bfloat16* ws, int M, int N, int K, cudaStream_t stream){
     if (M == 1 && N == 3840 && K == 2560){
@@ -52,5 +53,6 @@ extern "C" void sptmm(char* X_d, unsigned short* W_map_32_div_d, unsigned short*
         rowWiseSplit3Small4 < 1, 2560, 3840, 1536, 32 ><<< dim3(3840, 1, 1), dim3(32, 1, 1), 0, stream >>>(X_d, W_map_32_div_d,W_map_negative_32_div_d, c_d, s, ws);
     }else{
         std::cout << "required ladder gemm kernel: M " << M << ", N " << N << ", K " << K << std::endl;
+        abort();
     }
 }

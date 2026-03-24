@@ -57,10 +57,10 @@ def sptmm(x, k, w_map_32_div, w_map_neg_32_div, s, ws):
 
     M = x.shape[0]
     K = k
-    N = w_map_32_div.shape[0]
-    S = w_map_32_div.shape[1]
+    N = w_map_32_div.shape[0] // 32 # nooo
+    S = w_map_32_div.shape[1] * 32 * 2 # noooo
 
-    ret = ret = torch.zeros((1,N), dtype=torch.bfloat16, device=input0.device)
+    ret = ret = torch.zeros((1,N), dtype=torch.bfloat16, device=x.device)
 
     bitnet_lib.sptmm(*[ctypes.c_void_p(x.data_ptr()),
                        ctypes.c_void_p(w_map_32_div.data_ptr()),
