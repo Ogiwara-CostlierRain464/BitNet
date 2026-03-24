@@ -52,7 +52,7 @@ class ModelArgs:
 
 LayerCache = Tuple[torch.Tensor, torch.Tensor]
 
-def sptmm(x, k, w_map_32_div, w_map_neg_32_div):
+def sptmm(x, k, w_map_32_div, w_map_neg_32_div, s, ws):
     stream = torch.cuda.current_stream()
 
     M = x.shape[0]
@@ -66,6 +66,8 @@ def sptmm(x, k, w_map_32_div, w_map_neg_32_div):
                        ctypes.c_void_p(w_map_32_div.data_ptr()),
                        ctypes.c_void_p(w_map_neg_32_div.data_ptr()),
                        ctypes.c_void_p(ret.data_ptr()),
+                       ctypes.c_void_p(s.data_ptr()),
+                       ctypes.c_void_p(ws.data_ptr()),
                        ctypes.c_int(M),
                        ctypes.c_int(K),
                        ctypes.c_int(N),
@@ -79,6 +81,7 @@ class SpTmmKernel(nn.Module):
     s: int
     w_map_32_div: torch.Tensor
     w_map_negative_32_div: torch.Tensor
+    weight_scale: torch.Tensor
 
     def __init__(self, k: int, n: int, s: int):
         super().__init__()
@@ -93,6 +96,7 @@ class SpTmmKernel(nn.Module):
 
         self.w_map_32_div = alloc_div(32)
         self.w_map_negative_32_div = alloc_div(32)
+        self.weight_scale = torch.nn.Parameter(torch.zeros(4, dtype=torch.bfloat16), requires_grad=False)
 
     @torch.compile
     def quant_input(self, input):
@@ -101,9 +105,7 @@ class SpTmmKernel(nn.Module):
 
     def forward(self, input):
         input, s = self.quant_input(input)
-        return sptmm(input, self.k, self.w_map_32_div, self.w_map_negative_32_div, )
-
-        return bitnet_int8xint2_linear(input, self.weight, s, self.weight_scale)
+        return sptmm(input, self.k, self.w_map_32_div, self.w_map_negative_32_div, s, self.weight_scale)
 
 class BitLinearKernel(nn.Module):
     in_features: int
@@ -148,6 +150,7 @@ class Attention(nn.Module):
         rope_theta: float,
         norm_eps: float,
         use_kernel: bool,
+        use_sptmm: bool
     ):
         super().__init__()
 
@@ -159,16 +162,28 @@ class Attention(nn.Module):
 
         Linear = BitLinearKernel if use_kernel else BitLinear
 
-        self.wqkv = Linear(
-            dim,
-            (self.n_local_heads + 2 * self.n_local_kv_heads) * head_dim,
-            bias=False,
-        )
-        self.wo = Linear(
-            self.n_local_heads * head_dim,
-            dim,
-            bias=False,
-        )
+        if use_sptmm:
+            self.wqkv = SpTmmKernel(
+                dim,
+                (self.n_local_heads + 2 * self.n_local_kv_heads) * head_dim,
+                1536
+            )
+            self.wo = SpTmmKernel(
+                dim,
+                self.n_local_heads * head_dim,
+                1536
+            )
+        else:
+            self.wqkv = Linear(
+                dim,
+                (self.n_local_heads + 2 * self.n_local_kv_heads) * head_dim,
+                bias=False,
+            )
+            self.wo = Linear(
+                self.n_local_heads * head_dim,
+                dim,
+                bias=False,
+            )
 
         self.attn_sub_norm = RMSNorm(dim, norm_eps)
 
@@ -226,21 +241,34 @@ class FeedForward(nn.Module):
         hidden_dim: int,
         norm_eps: float,
         use_kernel: bool,
+        use_sptmm: bool
     ):
         super().__init__()
 
         Linear = BitLinearKernel if use_kernel else BitLinear
 
-        self.w13 = Linear(
-            dim,
-            2 * hidden_dim,
-            bias=False,
-        )
-        self.w2 = Linear(
-            hidden_dim,
-            dim,
-            bias=False,
-        )
+        if use_sptmm:
+            self.w13 = SpTmmKernel(
+                dim,
+                2 * hidden_dim,
+                1536
+                )
+            self.w2 = Linear(
+                hidden_dim,
+                dim,
+                4096,
+            )
+        else:
+            self.w13 = Linear(
+                dim,
+                2 * hidden_dim,
+                bias=False,
+            )
+            self.w2 = Linear(
+                hidden_dim,
+                dim,
+                bias=False,
+            )
         self.ffn_sub_norm = RMSNorm(hidden_dim, norm_eps)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -272,12 +300,14 @@ class TransformerBlock(nn.Module):
             rope_theta=args.rope_theta,
             norm_eps=args.norm_eps,
             use_kernel=args.use_kernel,
+            use_sptmm=args.use_sptmm
         )
         self.feed_forward = FeedForward(
             dim=args.dim,
             hidden_dim=args.ffn_dim,
             norm_eps=args.norm_eps,
             use_kernel=args.use_kernel,
+            use_sptmm=args.use_sptmm
         )
         self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
