@@ -253,7 +253,7 @@ class FeedForward(nn.Module):
                 2 * hidden_dim,
                 1536
                 )
-            self.w2 = Linear(
+            self.w2 = SpTmmKernel(
                 hidden_dim,
                 dim,
                 4096,
