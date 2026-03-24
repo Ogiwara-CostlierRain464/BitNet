@@ -79,5 +79,5 @@ __global__ void __launch_bounds__(128) ladder_int8xint2_kernel(int8_t* __restric
   int out_idx = ( blockIdx.y * K + (((int)blockIdx.x) * N_block_size) + ((int)threadIdx.y));
   int ws_idx = out_idx / (N / ws_num);
   if (threadIdx.x == 0)
-    dtype_transform[out_idx] = (__nv_bfloat16)(((float)red_buf0[0])/(float)s[0]*(float)ws[ws_idx]);
+    dtype_transform[out_idx] = (__nv_bfloat16)(  ((float)red_buf0[0])  /   (float)s[0]*(float)ws[ws_idx]    );
 }

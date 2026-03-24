@@ -52,6 +52,59 @@ class ModelArgs:
 
 LayerCache = Tuple[torch.Tensor, torch.Tensor]
 
+def sptmm(x, k, w_map_32_div, w_map_neg_32_div):
+    stream = torch.cuda.current_stream()
+
+    M = x.shape[0]
+    K = k
+    N = w_map_32_div.shape[0]
+    S = w_map_32_div.shape[1]
+
+    ret = ret = torch.zeros((1,N), dtype=torch.bfloat16, device=input0.device)
+
+    bitnet_lib.sptmm(*[ctypes.c_void_p(x.data_ptr()),
+                       ctypes.c_void_p(w_map_32_div.data_ptr()),
+                       ctypes.c_void_p(w_map_neg_32_div.data_ptr()),
+                       ctypes.c_void_p(ret.data_ptr()),
+                       ctypes.c_int(M),
+                       ctypes.c_int(K),
+                       ctypes.c_int(N),
+                       ctypes.c_int(S),
+                       ctypes.c_void_p(stream.cuda_stream)])
+    return ret
+
+class SpTmmKernel(nn.Module):
+    k: int
+    n: int
+    s: int
+    w_map_32_div: torch.Tensor
+    w_map_negative_32_div: torch.Tensor
+
+    def __init__(self, k: int, n: int, s: int):
+        super().__init__()
+        self.k = k
+        self.n = n
+        self.s = s
+
+        def alloc_div(div_nim):
+            rows = div_nim * n
+            cols = s // 2 // div_nim
+            return torch.zeros((rows, cols), dtype=torch.int16, requires_grad=False)
+
+        self.w_map_32_div = alloc_div(32)
+        self.w_map_negative_32_div = alloc_div(32)
+
+    @torch.compile
+    def quant_input(self, input):
+        s = 127 / input.abs().max(dim=-1, keepdim=True).values.clamp_(min=1e-5)
+        return (input * s).round().clamp(-128, 127).to(torch.int8), s
+
+    def forward(self, input):
+        input, s = self.quant_input(input)
+        return sptmm(input, self.k, self.w_map_32_div, self.w_map_negative_32_div, )
+
+        return bitnet_int8xint2_linear(input, self.weight, s, self.weight_scale)
+
 class BitLinearKernel(nn.Module):
     in_features: int
     out_features: int

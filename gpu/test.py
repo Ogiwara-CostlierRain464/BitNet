@@ -13,7 +13,7 @@ np.random.seed(42)
 
 bitnet_lib = ctypes.CDLL('bitnet_kernels/libbitnet.so')
 
-def sptmm(x, w_map_32_div, w_map_neg_32_div, ret):
+def sptmm(x, w_map_32_div, w_map_neg_32_div, s, ws, ret):
     stream = torch.cuda.current_stream()
 
     M = 1
@@ -25,6 +25,8 @@ def sptmm(x, w_map_32_div, w_map_neg_32_div, ret):
                        ctypes.c_void_p(w_map_32_div.data_ptr()),
                        ctypes.c_void_p(w_map_neg_32_div.data_ptr()),
                        ctypes.c_void_p(ret.data_ptr()),
+                       ctypes.c_void_p(s.data_ptr()),
+                       ctypes.c_void_p(ws.data_ptr()),
                        ctypes.c_int(M),
                        ctypes.c_int(K),
                        ctypes.c_int(N),
@@ -187,8 +189,8 @@ if __name__ == '__main__':
         )
 
         t2 = benchmark.Timer(
-            stmt="sptmm(input0, w_map_32_div, w_map_negative_32_div, ret)",
-            setup="from __main__ import input0, w_map_32_div, w_map_negative_32_div, ret, sptmm",
+            stmt="sptmm(input0, w_map_32_div, w_map_negative_32_div, s, ws, ret)",
+            setup="from __main__ import input0, w_map_32_div, w_map_negative_32_div, s, ws, ret, sptmm",
             num_threads=1,
         )
 

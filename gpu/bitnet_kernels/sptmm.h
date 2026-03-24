@@ -128,12 +128,15 @@ __global__ void prepareW_map(
 }
 
 
-template <const uint M_, const uint K_, const uint N_, const uint S_, const uint SPLIT = 32>
+template <const uint M_, const uint K_, const uint N_, const uint S_, const uint ws_num, const uint SPLIT = 32>
 __global__ void __launch_bounds__(32) rowWiseSplit3Small4(
         const char* __restrict__ const X,
         const unsigned short* __restrict__ const W_map,
         const unsigned short* __restrict__ const W_map_negative,
-        int* __restrict__ const C){
+        __nv_bfloat16* __restrict__ const C,
+        const __nv_bfloat16* __restrict__ const s,
+        const __nv_bfloat16* __restrict__ const ws
+        ){
 
     static constexpr int COLS_PER_WARP = 32 / SPLIT; // 1, 4
     static_assert((S_ / 2) % (SPLIT) == 0, "Wrong SPLIT Size");
@@ -163,7 +166,8 @@ __global__ void __launch_bounds__(32) rowWiseSplit3Small4(
         accum += __shfl_down_sync(0xffffffff, accum, i, SPLIT);
     }
 
+    int ws_idx = c_col / (N_ / ws_num);
     if (threadIdx.x == 0) {
-        __stwt(&C[m_row * N_ + c_col], accum);
+        C[m_row * N_ + c_col] = (__nv_bfloat16)(  ((float)accum) / (float)s[0]*(float)ws[ws_idx]  )  ;
     }
 }
