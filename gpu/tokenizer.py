@@ -88,6 +88,7 @@ class Tokenizer:
             self.special_tokens["<|end_of_text|>"],
             self.special_tokens["<|eot_id|>"],
         }
+        self.eot_id = self.special_tokens["<|eot_id|>"]
         logger.info(
             f"#words: {self.n_words} - BOS ID: {self.bos_id} - EOS ID: {self.eos_id}"
         )

@@ -39,8 +39,16 @@ python ./convert_safetensors.py --safetensors_file ./checkpoints/bitnet-b1.58-2B
 python ./convert_checkpoint.py --input ./checkpoints/model_state.pt
 rm ./checkpoints/model_state.pt
 
+# Create SpTMM weight
+python3 make_sptmm_weight.py
+
+export CUDA_VISIBLE_DEVICES=1
+
 # Inference
 python3 ./generate.py ./checkpoints/ --interactive --chat_format
+# Inference with SpTMM
+python3 ./generate_sptmm.py ./checkpoints/ --interactive --chat_format
+
 ```
 
 ## Optimizations
