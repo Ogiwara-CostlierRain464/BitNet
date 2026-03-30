@@ -32,7 +32,7 @@ class MatMulType(Enum):
 
 @dataclass
 class GenArgs:
-    gen_length: int = 32
+    gen_length: int = 1024
     gen_bsz: int = 1
     prompt_length: int = 64
 
