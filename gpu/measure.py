@@ -22,7 +22,13 @@ from xformers.ops.fmha.attn_bias import (
     BlockDiagonalCausalWithOffsetPaddedKeysMask as AttnBias,
 )
 from codecarbon import EmissionsTracker
+from enum import Enum
 
+
+class MatMulType(Enum):
+    CUBLAS_FP16 = 1
+    BITNET_CPP = 2
+    SPTMM = 3
 
 @dataclass
 class GenArgs:
@@ -33,6 +39,7 @@ class GenArgs:
     use_sampling: bool = False
     temperature: float = 0.8
     top_p: float = 0.9
+    matmul_type: MatMulType = MatMulType.CUBLAS_FP16
 
 
 class FastGen:
@@ -54,8 +61,17 @@ class FastGen:
         """
         start_time = time.time()
 
+        # Let's support many options
+
         model_args_prefill = fast.ModelArgs(use_kernel=False)
-        model_args_decode = fast.ModelArgs(use_kernel=False)
+
+        if gen_args.matmul_type == MatMulType.CUBLAS_FP16:
+            model_args_decode = fast.ModelArgs(use_kernel=False)
+        elif gen_args.matmul_type == MatMulType.BITNET_CPP:
+            model_args_decode = fast.ModelArgs(use_kernel=True)
+        else:
+            model_args_decode = fast.ModelArgs(use_kernel=False, use_sptmm=True)
+
         tokenizer = Tokenizer("./tokenizer.model")
 
         torch.set_default_device(device)
@@ -66,8 +82,20 @@ class FastGen:
 
         fp16_ckpt_path = str(Path(ckpt_dir) / "model_state_fp16.pt")
         fp16_checkpoint = torch.load(fp16_ckpt_path, map_location="cpu", weights_only=True)
+        int2_ckpt_path = str(Path(ckpt_dir) / "model_state_int2.pt")
+        int2_checkpoint = torch.load(int2_ckpt_path, map_location="cpu", weights_only=True)
+        sptmm_ckpt_path = str(Path(ckpt_dir) / "sptmm.pt")
+        sptmm_checkpoint = torch.load(sptmm_ckpt_path, map_location="cpu", weights_only=True)
+
         prefill_model.load_state_dict(fp16_checkpoint, strict=True)
-        decode_model.load_state_dict(fp16_checkpoint, strict=True)
+
+        if gen_args.matmul_type == MatMulType.CUBLAS_FP16:
+            decode_model.load_state_dict(fp16_checkpoint, strict=True)
+        elif gen_args.matmul_type == MatMulType.BITNET_CPP:
+            decode_model.load_state_dict(int2_checkpoint, strict=True)
+        else:
+            decode_model.load_state_dict(sptmm_checkpoint, strict=True)
+
 
         torch.cuda.synchronize()
         print(f"loaded model in {time.time() - start_time:.2f} seconds")
@@ -321,7 +349,7 @@ def get_prompts(interactive: bool) -> Iterable[list[str]]:
         ]
 
 
-def main( sampling: bool = False):
+def main(matmul_type: str, sampling: bool = False):
 
     local_rank = os.getenv("CUDA_VISIBLE_DEVICES")
     if local_rank is None:
@@ -331,8 +359,14 @@ def main( sampling: bool = False):
     device = f"cuda:{0}"
     torch.cuda.set_device(device)
 
+    matmul_type_enum = MatMulType.CUBLAS_FP16 if matmul_type == "cublas16" \
+        else MatMulType.BITNET_CPP if matmul_type == "bitnet.cpp" \
+        else MatMulType.SPTMM
+
+    print(f"matmul_type_enum: {matmul_type_enum}")
+
     # make model
-    g = FastGen.build("./checkpoints/", GenArgs(), device)
+    g = FastGen.build("./checkpoints/", GenArgs( matmul_type=matmul_type_enum  ), device)
 
     prompts = ["1+1="]
 
