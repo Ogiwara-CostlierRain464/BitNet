@@ -162,28 +162,39 @@ class Attention(nn.Module):
 
         Linear = BitLinearKernel if use_kernel else BitLinear
 
-        if use_sptmm:
-            self.wqkv = SpTmmKernel(
-                dim,
-                (self.n_local_heads + 2 * self.n_local_kv_heads) * head_dim,
-                1536
-            )
-            self.wo = SpTmmKernel(
-                dim,
-                self.n_local_heads * head_dim,
-                1536
-            )
-        else:
-            self.wqkv = Linear(
-                dim,
-                (self.n_local_heads + 2 * self.n_local_kv_heads) * head_dim,
-                bias=False,
-            )
-            self.wo = Linear(
-                self.n_local_heads * head_dim,
-                dim,
-                bias=False,
-            )
+        # if use_sptmm:
+        #     self.wqkv = SpTmmKernel(
+        #         dim,
+        #         (self.n_local_heads + 2 * self.n_local_kv_heads) * head_dim,
+        #         1536
+        #     )
+        #     self.wo = SpTmmKernel(
+        #         dim,
+        #         self.n_local_heads * head_dim,
+        #         1536
+        #     )
+        # else:
+        #     self.wqkv = Linear(
+        #         dim,
+        #         (self.n_local_heads + 2 * self.n_local_kv_heads) * head_dim,
+        #         bias=False,
+        #     )
+        #     self.wo = Linear(
+        #         self.n_local_heads * head_dim,
+        #         dim,
+        #         bias=False,
+        #     )
+        self.wqkv = Linear(
+            dim,
+            (self.n_local_heads + 2 * self.n_local_kv_heads) * head_dim,
+            bias=False,
+        )
+        self.wo = Linear(
+            self.n_local_heads * head_dim,
+            dim,
+            bias=False,
+        )
+
 
         self.attn_sub_norm = RMSNorm(dim, norm_eps)
 
@@ -248,11 +259,11 @@ class FeedForward(nn.Module):
         Linear = BitLinearKernel if use_kernel else BitLinear
 
         if use_sptmm:
-            self.w13 = SpTmmKernel(
+            self.w13 = Linear(
                 dim,
                 2 * hidden_dim,
-                1536
-                )
+                bias=False,
+            )
             self.w2 = SpTmmKernel(
                 hidden_dim,
                 dim,
