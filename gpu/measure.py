@@ -69,8 +69,8 @@ class FastGen:
             model_args_decode = fast.ModelArgs(use_kernel=False)
         elif gen_args.matmul_type == MatMulType.BITNET_CPP:
             model_args_decode = fast.ModelArgs(use_kernel=True)
-        else:
-            model_args_decode = fast.ModelArgs(use_kernel=False, use_sptmm=True)
+        else: # SpTMM
+            model_args_decode = fast.ModelArgs(use_kernel=True, use_sptmm=True, sparsity=40)
 
         tokenizer = Tokenizer("./tokenizer.model")
 
@@ -86,6 +86,8 @@ class FastGen:
         int2_checkpoint = torch.load(int2_ckpt_path, map_location="cpu", weights_only=True)
         sptmm_ckpt_path = str(Path(ckpt_dir) / "sptmm.pt")
         sptmm_checkpoint = torch.load(sptmm_ckpt_path, map_location="cpu", weights_only=True)
+        #partial_sptmm_ckpt_path = str(Path(ckpt_dir) / "partial_sptmm.pt")
+        #partial_sptmm_checkpoint = torch.load(partial_sptmm_ckpt_path, map_location="cpu", weights_only=True)
 
         prefill_model.load_state_dict(fp16_checkpoint, strict=True)
 
@@ -94,6 +96,7 @@ class FastGen:
         elif gen_args.matmul_type == MatMulType.BITNET_CPP:
             decode_model.load_state_dict(int2_checkpoint, strict=True)
         else:
+            #decode_model.load_state_dict(partial_sptmm_checkpoint, strict=True)
             decode_model.load_state_dict(sptmm_checkpoint, strict=True)
 
 

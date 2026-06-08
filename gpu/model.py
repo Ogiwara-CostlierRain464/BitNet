@@ -48,6 +48,7 @@ class ModelArgs:
     rope_theta: float = 500000.0
     use_kernel: bool = False
     use_sptmm: bool = False
+    sparsity: int = 40 # 40 or 60 or 80
 
 
 LayerCache = Tuple[torch.Tensor, torch.Tensor]
@@ -150,7 +151,8 @@ class Attention(nn.Module):
         rope_theta: float,
         norm_eps: float,
         use_kernel: bool,
-        use_sptmm: bool
+        use_sptmm: bool,
+        sparsity: int
     ):
         super().__init__()
 
@@ -162,38 +164,39 @@ class Attention(nn.Module):
 
         Linear = BitLinearKernel if use_kernel else BitLinear
 
-        # if use_sptmm:
-        #     self.wqkv = SpTmmKernel(
-        #         dim,
-        #         (self.n_local_heads + 2 * self.n_local_kv_heads) * head_dim,
-        #         1536
-        #     )
-        #     self.wo = SpTmmKernel(
-        #         dim,
-        #         self.n_local_heads * head_dim,
-        #         1536
-        #     )
-        # else:
-        #     self.wqkv = Linear(
-        #         dim,
-        #         (self.n_local_heads + 2 * self.n_local_kv_heads) * head_dim,
-        #         bias=False,
-        #     )
-        #     self.wo = Linear(
-        #         self.n_local_heads * head_dim,
-        #         dim,
-        #         bias=False,
-        #     )
-        self.wqkv = Linear(
-            dim,
-            (self.n_local_heads + 2 * self.n_local_kv_heads) * head_dim,
-            bias=False,
-        )
-        self.wo = Linear(
-            self.n_local_heads * head_dim,
-            dim,
-            bias=False,
-        )
+        if use_sptmm:
+            s = {40: 1536, 60: 1024, 80: 512}[sparsity]
+            self.wqkv = SpTmmKernel(
+                dim,
+                (self.n_local_heads + 2 * self.n_local_kv_heads) * head_dim,
+                s
+            )
+            self.wo = SpTmmKernel(
+                dim,
+                self.n_local_heads * head_dim,
+                s
+            )
+        else:
+            self.wqkv = Linear(
+                dim,
+                (self.n_local_heads + 2 * self.n_local_kv_heads) * head_dim,
+                bias=False,
+            )
+            self.wo = Linear(
+                self.n_local_heads * head_dim,
+                dim,
+                bias=False,
+            )
+        # self.wqkv = Linear(
+        #     dim,
+        #     (self.n_local_heads + 2 * self.n_local_kv_heads) * head_dim,
+        #     bias=False,
+        # )
+        # self.wo = Linear(
+        #     self.n_local_heads * head_dim,
+        #     dim,
+        #     bias=False,
+        # )
 
 
         self.attn_sub_norm = RMSNorm(dim, norm_eps)
@@ -252,22 +255,26 @@ class FeedForward(nn.Module):
         hidden_dim: int,
         norm_eps: float,
         use_kernel: bool,
-        use_sptmm: bool
+        use_sptmm: bool,
+        sparsity: int
     ):
         super().__init__()
 
         Linear = BitLinearKernel if use_kernel else BitLinear
 
         if use_sptmm:
-            self.w13 = Linear(
+            s_w13 = {40: 1536, 60: 1024, 80: 512}[sparsity]
+            self.w13 = SpTmmKernel(
                 dim,
                 2 * hidden_dim,
-                bias=False,
+                s_w13
             )
+
+            s_w2 = {40: 4096, 60: 2752, 80: 1408}[sparsity]
             self.w2 = SpTmmKernel(
                 hidden_dim,
                 dim,
-                4096,
+                s_w2,
             )
         else:
             self.w13 = Linear(
@@ -311,14 +318,16 @@ class TransformerBlock(nn.Module):
             rope_theta=args.rope_theta,
             norm_eps=args.norm_eps,
             use_kernel=args.use_kernel,
-            use_sptmm=args.use_sptmm
+            use_sptmm=args.use_sptmm,
+            sparsity=args.sparsity
         )
         self.feed_forward = FeedForward(
             dim=args.dim,
             hidden_dim=args.ffn_dim,
             norm_eps=args.norm_eps,
             use_kernel=args.use_kernel,
-            use_sptmm=args.use_sptmm
+            use_sptmm=args.use_sptmm,
+            sparsity=args.sparsity
         )
         self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)

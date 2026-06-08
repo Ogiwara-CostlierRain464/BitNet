@@ -43,14 +43,37 @@ extern "C" void prepare_w_map(char* W_d, unsigned short* W_map_d, unsigned short
 }
 
 extern "C" void sptmm(char* X_d, unsigned short* W_map_32_div_d, unsigned short* W_map_negative_32_div_d, __nv_bfloat16* c_d, __nv_bfloat16* s, __nv_bfloat16* ws, int M, int K, int N, int S, cudaStream_t stream){
-    if(M == 1 && K == 6912 && N == 2560 && S == 4096){
+    // Down
+    if(M == 1 && K == 6912 && N == 2560 && S == 4096){ // 40%
         rowWiseSplit3Small4<1, 6912, 2560, 4096, 32><<< 2560 / 1, dim3(32,1,1), 0, stream >>>(X_d, W_map_32_div_d,W_map_negative_32_div_d, c_d, s, ws);
-    }else if(M == 1 && K == 2560 && N == 13824 && S == 1536){
+    }else if(M == 1 && K == 6912 && N == 2560 && S == 2752){ // 60%
+        rowWiseSplit3Small4 < 1, 6912, 2560, 2752, 32 ><<< dim3(2560, 1, 1), dim3(32, 1, 1), 0, stream >>>(X_d, W_map_32_div_d,W_map_negative_32_div_d, c_d, s, ws);
+    }else if(M == 1 && K == 6912 && N == 2560 && S == 1408){ // 80%
+        rowWiseSplit3Small4 < 1, 6912, 2560, 1408, 32 ><<< dim3(2560, 1, 1), dim3(32, 1, 1), 0, stream >>>(X_d, W_map_32_div_d,W_map_negative_32_div_d, c_d, s, ws);
+
+    // Up & Gate
+    }else if(M == 1 && K == 2560 && N == 13824 && S == 1536){ // 40%
         rowWiseSplit3Small4 < 1, 2560, 13824, 1536, 32 ><<< dim3(13824, 1, 1), dim3(32, 1, 1), 0, stream >>>(X_d, W_map_32_div_d,W_map_negative_32_div_d, c_d, s, ws);
-    }else if(M == 1 && K == 2560 && N == 2560 && S == 1536) {
+    }else if(M == 1 && K == 2560 && N == 13824 && S == 1024){ // 60%
+        rowWiseSplit3Small4 < 1, 2560, 13824, 1024, 32 ><<< dim3(13824, 1, 1), dim3(32, 1, 1), 0, stream >>>(X_d, W_map_32_div_d,W_map_negative_32_div_d, c_d, s, ws);
+    }else if(M == 1 && K == 2560 && N == 13824 && S == 512){ // 80%
+        rowWiseSplit3Small4 < 1, 2560, 13824, 512, 32 ><<< dim3(13824, 1, 1), dim3(32, 1, 1), 0, stream >>>(X_d, W_map_32_div_d,W_map_negative_32_div_d, c_d, s, ws);
+
+    // Output
+    }else if(M == 1 && K == 2560 && N == 2560 && S == 1536) { // 40%
         rowWiseSplit3Small4 < 1, 2560, 2560, 1536, 32 ><<< dim3(2560, 1, 1), dim3(32, 1, 1), 0, stream >>>(X_d, W_map_32_div_d,W_map_negative_32_div_d, c_d, s, ws);
+    }else if(M == 1 && K == 2560 && N == 2560 && S == 1024) { // 60%
+        rowWiseSplit3Small4 < 1, 2560, 2560, 1024, 32 ><<< dim3(2560, 1, 1), dim3(32, 1, 1), 0, stream >>>(X_d, W_map_32_div_d,W_map_negative_32_div_d, c_d, s, ws);
+    }else if(M == 1 && K == 2560 && N == 2560 && S == 512) { // 80%
+        rowWiseSplit3Small4 < 1, 2560, 2560, 512, 32 ><<< dim3(2560, 1, 1), dim3(32, 1, 1), 0, stream >>>(X_d, W_map_32_div_d,W_map_negative_32_div_d, c_d, s, ws);
+
+    // Q & K & V
     }else if(M == 1 && K == 2560 && N == 3840 && S == 1536) {
         rowWiseSplit3Small4 < 1, 2560, 3840, 1536, 32 ><<< dim3(3840, 1, 1), dim3(32, 1, 1), 0, stream >>>(X_d, W_map_32_div_d,W_map_negative_32_div_d, c_d, s, ws);
+    }else if(M == 1 && K == 2560 && N == 3840 && S == 1024) {
+        rowWiseSplit3Small4 < 1, 2560, 3840, 1024, 32 ><<< dim3(3840, 1, 1), dim3(32, 1, 1), 0, stream >>>(X_d, W_map_32_div_d,W_map_negative_32_div_d, c_d, s, ws);
+    }else if(M == 1 && K == 2560 && N == 3840 && S == 512) {
+        rowWiseSplit3Small4 < 1, 2560, 3840, 512, 32 ><<< dim3(3840, 1, 1), dim3(32, 1, 1), 0, stream >>>(X_d, W_map_32_div_d,W_map_negative_32_div_d, c_d, s, ws);
     }else{
         std::cout << "required ladder gemm kernel: M " << M << ", N " << N << ", K " << K << std::endl;
         abort();
