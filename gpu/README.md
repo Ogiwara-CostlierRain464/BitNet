@@ -26,7 +26,7 @@ bash compile.sh
 cd ..
 
 # Run performance tests
-python test.py
+python3 test.py
 ```
 
 End-to-end inference:
@@ -49,7 +49,17 @@ python3 ./generate.py ./checkpoints/ --interactive --chat_format
 # Inference with SpTMM
 python3 ./generate_sptmm.py ./checkpoints/ --interactive --chat_format
 
+python3 measure.py 
+
+# we need
+apt install software-properties-common
+
+docker run --cap-add SYS_ADMIN --privileged -it -v ./:/work -v /home/yogiwara/docker-cache:/root/.cache  -d --net=host   --gpus all --name ogi2 nvidia/cuda:12.2.0-devel-ubuntu22.04 bash
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+
 ```
+
+
 
 ## Optimizations
 

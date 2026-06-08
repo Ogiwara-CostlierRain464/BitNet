@@ -40,6 +40,7 @@ class GenArgs:
     temperature: float = 0.8
     top_p: float = 0.9
     matmul_type: MatMulType = MatMulType.CUBLAS_FP16
+    sparsity: int = 40 # 40, 60, 80
 
 
 class FastGen:
@@ -70,7 +71,7 @@ class FastGen:
         elif gen_args.matmul_type == MatMulType.BITNET_CPP:
             model_args_decode = fast.ModelArgs(use_kernel=True)
         else: # SpTMM
-            model_args_decode = fast.ModelArgs(use_kernel=True, use_sptmm=True, sparsity=40)
+            model_args_decode = fast.ModelArgs(use_kernel=True, use_sptmm=True, sparsity=gen_args.sparsity)
 
         tokenizer = Tokenizer("./tokenizer.model")
 
@@ -84,7 +85,7 @@ class FastGen:
         fp16_checkpoint = torch.load(fp16_ckpt_path, map_location="cpu", weights_only=True)
         int2_ckpt_path = str(Path(ckpt_dir) / "model_state_int2.pt")
         int2_checkpoint = torch.load(int2_ckpt_path, map_location="cpu", weights_only=True)
-        sptmm_ckpt_path = str(Path(ckpt_dir) / "sptmm.pt")
+        sptmm_ckpt_path = str(Path(ckpt_dir) / ({40: "sptmm_40.pt", 60: "sptmm_60.pt", 80: "sptmm_80.pt"}[gen_args.sparsity]))
         sptmm_checkpoint = torch.load(sptmm_ckpt_path, map_location="cpu", weights_only=True)
         #partial_sptmm_ckpt_path = str(Path(ckpt_dir) / "partial_sptmm.pt")
         #partial_sptmm_checkpoint = torch.load(partial_sptmm_ckpt_path, map_location="cpu", weights_only=True)
