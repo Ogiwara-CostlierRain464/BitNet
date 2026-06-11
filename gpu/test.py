@@ -196,6 +196,6 @@ if __name__ == '__main__':
                 num_threads=1,
             )
             time2 = t2.timeit(50)
-            print(f'Shape{N,K}, W2A8: {time0.mean * 1e6:.2f}us, torch BF16: {time1.mean * 1e6:.2f}us, SpTMM: {time2.mean * 1e6:.2f}us')
+            print(f'SpTMM with {sparsity}% sparsity : {time2.mean * 1e6:.2f}us')
 
         
