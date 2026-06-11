@@ -13,13 +13,8 @@ np.random.seed(42)
 
 bitnet_lib = ctypes.CDLL('bitnet_kernels/libbitnet.so')
 
-def sptmm(x, w_map_32_div, w_map_neg_32_div, s, ws, ret):
+def sptmm(x, w_map_32_div, w_map_neg_32_div, s, ws, ret, M, K, N, S):
     stream = torch.cuda.current_stream()
-
-    M = 1
-    K = 6912
-    N = 2560
-    S = 4096
 
     bitnet_lib.sptmm(*[ctypes.c_void_p(x.data_ptr()),
                        ctypes.c_void_p(w_map_32_div.data_ptr()),
@@ -143,30 +138,30 @@ def prepare_w_map(m, k, n, s):
 
 if __name__ == '__main__':
     test_list = [
-        (2560, 6912), # N, K
+        (2560, 6912, [4096, 2752, 1408]), # N, K  # Down
+        (13824, 2560, [1536, 1024, 512]), # Up & Gate
+        (2560, 2560, [1536, 1024, 512]), # Output
+        (3840, 2560, [1536, 1024, 512]), # QKV
     ]
-    for N,K in test_list:
+    for N,K, s_list in test_list:
         weight = torch.randint(-1, 2, (N, K), dtype=torch.int8, device='cuda')
         weight_scale = torch.ones(1, dtype=torch.bfloat16, device='cuda')
         weight_compressed = convert_weight_int8_to_int2(weight).to('cuda')
 
-        w_map_32_div, w_map_negative_32_div = prepare_w_map_fast(1, K, N, 4096)
+        input0 = torch.randint(-128,127,(1, K),dtype=torch.int8, device='cuda')
+        input0_bf16 = input0.to(torch.bfloat16)
+        input_np = input0.cpu().to(torch.int32).numpy()
+        weight_np = weight.cpu().to(torch.int32).T.numpy()
+        out_np = np.matmul(input_np,weight_np)
+        out_np = torch.tensor(out_np).cuda().to(torch.bfloat16)
 
-        for i in range(1):
-            input0 = torch.randint(-128,127,(1, K),dtype=torch.int8, device='cuda')
-            input0_bf16 = input0.to(torch.bfloat16)
-            input_np = input0.cpu().to(torch.int32).numpy()
-            weight_np = weight.cpu().to(torch.int32).T.numpy()
-            out_np = np.matmul(input_np,weight_np)
-            out_np = torch.tensor(out_np).cuda().to(torch.bfloat16)
+        s = torch.ones(1, dtype=torch.bfloat16, device='cuda')
+        ws = torch.ones(6, dtype=torch.bfloat16, device='cuda')
 
-            s = torch.ones(1, dtype=torch.bfloat16, device='cuda')
-            ws = torch.ones(6, dtype=torch.bfloat16, device='cuda')
+        ret = torch.empty((1,N), dtype=torch.bfloat16, device=input0.device)
+        out = bitnet_int8xint2_linear(input0, weight_compressed, s, ws, ret)
 
-            ret = torch.empty((1,N), dtype=torch.bfloat16, device=input0.device)
-            out = bitnet_int8xint2_linear(input0, weight_compressed, s, ws, ret)
-
-            print(f'custom == np {torch.all(out==out_np)}')
+        print(f'custom == np {torch.all(out==out_np)}')
 
         input0 = torch.randint(-128,127,(1, K),dtype=torch.int8, device='cuda')
         input0_fp16 = input0.to(torch.float16)
@@ -188,17 +183,19 @@ if __name__ == '__main__':
             num_threads=1,
         )
 
-        t2 = benchmark.Timer(
-            stmt="sptmm(input0, w_map_32_div, w_map_negative_32_div, s, ws, ret)",
-            setup="from __main__ import input0, w_map_32_div, w_map_negative_32_div, s, ws, ret, sptmm",
-            num_threads=1,
-        )
-
-
         time0 = t0.timeit(50)
         time1 = t1.timeit(50)
-        time2 = t2.timeit(50)
 
-        print(f'Shape{N,K}, W2A8: {time0.mean * 1e6:.2f}us, torch BF16: {time1.mean * 1e6:.2f}us, SpTMM: {time2.mean * 1e6:.2f}us')
+        print(f'Shape{N,K}, W2A8: {time0.mean * 1e6:.2f}us, torch BF16: {time1.mean * 1e6:.2f}us')
+
+        for sparsity in s_list:
+            w_map_32_div, w_map_negative_32_div = prepare_w_map_fast(1, K, N, sparsity)
+            t2 = benchmark.Timer(
+                stmt="sptmm(input0, w_map_32_div, w_map_negative_32_div, s, ws, ret, M=1,K, N, sparsity)",
+                setup="from __main__ import input0, w_map_32_div, w_map_negative_32_div, s, ws, ret, sptmm, N, K, sparsity",
+                num_threads=1,
+            )
+            time2 = t2.timeit(50)
+            print(f'Shape{N,K}, W2A8: {time0.mean * 1e6:.2f}us, torch BF16: {time1.mean * 1e6:.2f}us, SpTMM: {time2.mean * 1e6:.2f}us')
 
         
