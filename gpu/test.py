@@ -191,7 +191,7 @@ if __name__ == '__main__':
         for sparsity in s_list:
             w_map_32_div, w_map_negative_32_div = prepare_w_map_fast(1, K, N, sparsity)
             t2 = benchmark.Timer(
-                stmt="sptmm(input0, w_map_32_div, w_map_negative_32_div, s, ws, ret, M=1,K, N, sparsity)",
+                stmt="sptmm(input0, w_map_32_div, w_map_negative_32_div, s, ws, ret, 1,K, N, sparsity)",
                 setup="from __main__ import input0, w_map_32_div, w_map_negative_32_div, s, ws, ret, sptmm, N, K, sparsity",
                 num_threads=1,
             )
