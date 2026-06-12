@@ -179,7 +179,7 @@ if __name__ == '__main__':
             )
             t3 = benchmark.Timer(
                 stmt="sptmm_delta(input0, W_map_delta2_div128, W_map_negative_delta2_div128, s, ws, ret, 1,K, N, sparsity)",
-                setup="from __main__ import input0, W_map_delta2_div128, W_map_negative_delta2_div128, s, ws, ret, sptmm, N, K, sparsity",
+                setup="from __main__ import input0, W_map_delta2_div128, W_map_negative_delta2_div128, s, ws, ret, sptmm_delta, N, K, sparsity",
                 num_threads=1,
             )
 
