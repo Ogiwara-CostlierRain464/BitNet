@@ -185,7 +185,8 @@ if __name__ == '__main__':
             w_original, w_map_32_div, w_map_negative_32_div, W_map_delta2_div128, W_map_negative_delta2_div128 = prepare_w_map_fast(1, K, N, sparsity)
 
             if args.matmul_test:
-                expected = torch.matmul(input0,w_original)
+                w_original_bf16 = w_original.to(torch.bfloat16)
+                expected = torch.matmul(input0_bf16,w_original_bf16)
 
                 sptmm(input0, w_map_32_div, w_map_negative_32_div, s, ws, ret_sptmm, 1,K, N, sparsity)
                 sptmm_success = torch.all(ret_sptmm == expected)
