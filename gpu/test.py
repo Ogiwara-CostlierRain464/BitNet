@@ -116,7 +116,7 @@ def prepare_w_map_fast(m, k, n, s):
         ctypes.c_int(s),
         ctypes.c_void_p(stream.cuda_stream)])
 
-    return w_map_32_div, w_map_negative_32_div, W_map_delta2_div128, W_map_negative_delta2_div128
+    return w, w_map_32_div, w_map_negative_32_div, W_map_delta2_div128, W_map_negative_delta2_div128
 
 
 if __name__ == '__main__':
@@ -182,14 +182,16 @@ if __name__ == '__main__':
         print(f'Shape{N,K}, W2A8: {time0.median * 1e6:.2f}us, torch BF16: {time1.median * 1e6:.2f}us')
 
         for sparsity in s_list:
-            w_map_32_div, w_map_negative_32_div, W_map_delta2_div128, W_map_negative_delta2_div128 = prepare_w_map_fast(1, K, N, sparsity)
+            w_original, w_map_32_div, w_map_negative_32_div, W_map_delta2_div128, W_map_negative_delta2_div128 = prepare_w_map_fast(1, K, N, sparsity)
 
             if args.matmul_test:
+                expected = torch.matmul(input0,w_original)
+
                 sptmm(input0, w_map_32_div, w_map_negative_32_div, s, ws, ret_sptmm, 1,K, N, sparsity)
-                sptmm_success = torch.all(ret_sptmm == out_np)
+                sptmm_success = torch.all(ret_sptmm == expected)
 
                 sptmm_delta(input0, W_map_delta2_div128, W_map_negative_delta2_div128, s, ws, ret_sptmm_delta, 1,K, N, sparsity)
-                sptmm_delta_success = torch.all(ret_sptmm_delta == out_np)
+                sptmm_delta_success = torch.all(ret_sptmm_delta == expected)
 
                 print(
                     f"Sparsity {sparsity}%: "
