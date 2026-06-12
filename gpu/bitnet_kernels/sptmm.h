@@ -257,7 +257,7 @@ __global__ void __launch_bounds__(BLOCK_SIZE) rowWiseSplit2DeltaSmallAsync2_6(
         const char* __restrict__ const X,
         const unsigned char* __restrict__ const W_map_delta,
         const unsigned char* __restrict__ const W_map_negative_delta,
-        int* __restrict__ const C,
+        __nv_bfloat16* __restrict__ const C,
         const __nv_bfloat16* __restrict__ const s,
         const __nv_bfloat16* __restrict__ const ws
         ){
@@ -353,7 +353,7 @@ __global__ void __launch_bounds__(BLOCK_SIZE) rowWiseSplit2DeltaSmallAsync2_7(
         const char* __restrict__ const X,
         const unsigned char* __restrict__ const W_map_delta,
         const unsigned char* __restrict__ const W_map_negative_delta,
-        int* __restrict__ const C,
+        __nv_bfloat16* __restrict__ const C,
         const __nv_bfloat16* __restrict__ const s,
         const __nv_bfloat16* __restrict__ const ws
         ){
