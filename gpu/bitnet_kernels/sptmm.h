@@ -7,6 +7,7 @@
 #include <cuda_fp16.h>
 #include <cuda_bf16.h>
 #include <cassert>
+#include "AsyncCopy_PTX.cuh"
 
 typedef unsigned char uchar;
 
@@ -85,122 +86,6 @@ abort();                                              \
 #define W_MAJOR MAJOR_COL
 
 #define CEIL_DIV(M, N) (((M) + (N)-1) / (N))
-
-
-template<int SizeInBytes>
-__device__ __forceinline__ void cp_async(half* smem_ptr, const half* global_ptr, bool pred_guard = true)
-{
-    static_assert((SizeInBytes == 4 || SizeInBytes == 8 || SizeInBytes == 16), "Size is not supported");
-    unsigned smem_int_ptr = __cvta_generic_to_shared(smem_ptr);
-    asm volatile("{ \n"
-                 "  .reg .pred p;\n"
-                 "  setp.ne.b32 p, %0, 0;\n"
-                 "  @p cp.async.cg.shared.global [%1], [%2], %3;\n"
-                 "}\n" ::"r"((int)pred_guard),
-    "r"(smem_int_ptr),
-    "l"(global_ptr),
-    "n"(SizeInBytes));
-}
-
-template<int SizeInBytes = 16>
-__device__ __forceinline__ void cp_async(int4* smem_ptr, const int4* global_ptr, bool pred_guard = true)
-{
-    static_assert(SizeInBytes == 16, "Size is not supported");
-    const unsigned smem_int_ptr = __cvta_generic_to_shared(smem_ptr);
-    asm volatile("{ \n"
-                 "  .reg .pred p;\n"
-                 "  setp.ne.b32 p, %0, 0;\n"
-                 "  @p cp.async.cg.shared.global [%1], [%2], %3;\n"
-                 "}\n" ::"r"((int)pred_guard),
-    "r"(smem_int_ptr),
-    "l"(global_ptr),
-    "n"(SizeInBytes));
-}
-
-template<int SizeInBytes = 8>
-__device__ __forceinline__ void cp_async(int2* smem_ptr, const int2* global_ptr, bool pred_guard = true)
-{
-    static_assert((SizeInBytes == 4 || SizeInBytes == 8 || SizeInBytes == 16), "Size is not supported");
-    const unsigned smem_int_ptr = __cvta_generic_to_shared(smem_ptr);
-    asm volatile("{ \n"
-                 "  .reg .pred p;\n"
-                 "  setp.ne.b32 p, %0, 0;\n"
-                 "  @p cp.async.ca.shared.global [%1], [%2], %3;\n" // Note: cannot use cg
-                 "}\n" ::"r"((int)pred_guard),
-    "r"(smem_int_ptr),
-    "l"(global_ptr),
-    "n"(SizeInBytes));
-}
-
-template<int SizeInBytes = 4>
-__device__ __forceinline__ void cp_async(int* smem_ptr, const int* global_ptr, bool pred_guard = true)
-{
-    static_assert((SizeInBytes == 4), "Size is not supported");
-    const unsigned smem_int_ptr = __cvta_generic_to_shared(smem_ptr);
-    asm volatile("{ \n"
-                 "  .reg .pred p;\n"
-                 "  setp.ne.b32 p, %0, 0;\n"
-                 "  @p cp.async.ca.shared.global [%1], [%2], %3;\n" // Note: cannot use cg
-                 "}\n" ::"r"((int)pred_guard),
-    "r"(smem_int_ptr),
-    "l"(global_ptr),
-    "n"(SizeInBytes));
-}
-
-// only used for kernel pipeline analysis
-template<int SizeInBytes>
-__device__ __forceinline__ void cp_async_test_only(half* smem_ptr, const half* global_ptr, bool pred_guard = true)
-{
-    static_assert((SizeInBytes == 4 || SizeInBytes == 8 || SizeInBytes == 16), "Size is not supported");
-    unsigned smem_int_ptr = __cvta_generic_to_shared(smem_ptr);
-    asm volatile("{ \n"
-                 "  .reg .pred p;\n"
-                 "  setp.ne.b32 p, %0, 0;\n"
-                 "  @p cp.async.cg.shared.global [%1], [%2], %3, 0;\n"
-                 "}\n" ::"r"((int)pred_guard),
-    "r"(smem_int_ptr),
-    "l"(global_ptr),
-    "n"(SizeInBytes));
-}
-
-template<int SizeInBytes>
-__device__ __forceinline__ void cp_async_ignore_src(half* smem_ptr, half* global_ptr)
-{
-    static_assert((SizeInBytes == 4 || SizeInBytes == 8 || SizeInBytes == 16), "Size is not supported");
-    unsigned smem_int_ptr = __cvta_generic_to_shared(smem_ptr);
-    asm volatile("{ \n"
-                 "  cp.async.cg.shared.global [%0], [%1], %2, 0;\n"
-                 "}\n" ::"r"(smem_int_ptr),
-    "l"(global_ptr),
-    "n"(SizeInBytes));
-}
-
-/// Establishes an ordering w.r.t previously issued cp.async instructions. Does not block.
-__device__ __forceinline__ void cp_async_group_commit()
-{
-    asm volatile("cp.async.commit_group;\n" ::);
-}
-
-/// Blocks until all but <N> previous cp.async.commit_group operations have committed.
-template<int N>
-__device__ __forceinline__ void cp_async_wait_group()
-{
-    asm volatile("cp.async.wait_group %0;\n" ::"n"(N));
-}
-
-
-template<int I, int N>
-__device__ __forceinline__ void cp_async_wait_group_unrolled() {
-    if constexpr (I < N) {
-        cp_async_wait_group<I>();
-        cp_async_wait_group_unrolled<I + 1, N>();
-    }
-}
-
-template<int N>
-__device__ __forceinline__ void cp_async_wait_group_for() {
-    cp_async_wait_group_unrolled<0, N>();
-}
 
 
 // helper func for creating vector
