@@ -38,8 +38,21 @@ extern "C" void bitlinear_int8xint2(int8_t* input0, int8_t* input1, __nv_bfloat1
     }
 }
 
-extern "C" void prepare_w_map(char* W_d, unsigned short* W_map_d, unsigned short* W_map_negative_d, unsigned short* W_map_32_div_d, unsigned short* W_map_negative_32_div_d, int M, int K, int N, int S, cudaStream_t stream){
-    prepareW_map<<<N/16, 16, 0, stream>>>(W_d, W_map_d, W_map_negative_d, W_map_32_div_d, W_map_negative_32_div_d, M, K, N, S);
+extern "C" void prepare_w_map(
+    char* W_d,
+    unsigned short* W_map_d,
+    unsigned short* W_map_negative_d,
+
+    unsigned char* const W_map_delta2_d,
+    unsigned char* const W_map_negative_delta2_d,
+
+    unsigned short* W_map_32_div_d,
+    unsigned short* W_map_negative_32_div_d,
+    unsigned char* const W_map_delta2_div128,
+    unsigned char* const W_map_negative_delta2_div128,
+    int M, int K, int N, int S, cudaStream_t stream){
+
+    prepareW_map<<<N/16, 16, 0, stream>>>(W_d, W_map_d, W_map_negative_d, W_map_delta2_d, W_map_negative_delta2_d, W_map_32_div_d, W_map_negative_32_div_d, W_map_delta2_div128, W_map_negative_delta2_div128, M, K, N, S);
 }
 
 extern "C" void sptmm(char* X_d, unsigned short* W_map_32_div_d, unsigned short* W_map_negative_32_div_d, __nv_bfloat16* c_d, __nv_bfloat16* s, __nv_bfloat16* ws, int M, int K, int N, int S, cudaStream_t stream){

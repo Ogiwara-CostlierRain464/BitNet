@@ -165,7 +165,7 @@ __global__ void prepareW_map(
 
     for(int i = 0; i < S/2; i++){
         if(i==0){
-            AT(W_MAJOR)(W_map_negative_2_d, S / 2, N, i, col)
+            AT(W_MAJOR)(W_map_negative_delta2_d, S / 2, N, i, col)
                 = AT(W_MAJOR) (W_map_negative, S / 2, N, i, col);
         }else{
             AT(W_MAJOR)(W_map_negative_delta2_d, S / 2, N, i, col)
