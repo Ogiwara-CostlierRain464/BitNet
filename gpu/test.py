@@ -8,6 +8,7 @@ from torch.profiler import profile, record_function, ProfilerActivity
 import ctypes
 import numpy as np
 import argparse
+import pdb
 # set all seed
 torch.manual_seed(42)
 np.random.seed(42)
@@ -193,6 +194,10 @@ if __name__ == '__main__':
 
                 sptmm_delta(input0, W_map_delta2_div128, W_map_negative_delta2_div128, s, ws, ret_sptmm_delta, 1,K, N, sparsity)
                 sptmm_delta_success = torch.all(ret_sptmm_delta == expected)
+
+                if not torch.equal(ret_sptmm, expected):
+                    print("Mismatch detected!")
+                    pdb.set_trace()
 
                 print(
                     f"Sparsity {sparsity}%: "
