@@ -186,6 +186,8 @@ if __name__ == '__main__':
             w_original, w_map_32_div, w_map_negative_32_div, W_map_delta2_div128, W_map_negative_delta2_div128 = prepare_w_map_fast(1, K, N, sparsity)
 
             if args.matmul_test:
+                # don't forget to convert to column major since pytorch is row major!
+                w_original = w_original.t().contiguous().t().to('cuda')
                 w_original_bf16 = w_original.to(torch.bfloat16)
                 expected = torch.matmul(input0_bf16,w_original_bf16)
 
