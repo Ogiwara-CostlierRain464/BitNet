@@ -117,7 +117,7 @@ def prepare_w_map_fast(m, k, n, s):
         ctypes.c_int(s),
         ctypes.c_void_p(stream.cuda_stream)])
 
-    return w, w_map_32_div, w_map_negative_32_div, W_map_delta2_div128, W_map_negative_delta2_div128
+    return w, w_map, w_map_negative, w_map_32_div, w_map_negative_32_div, W_map_delta2_div128, W_map_negative_delta2_div128
 
 
 if __name__ == '__main__':
@@ -183,7 +183,7 @@ if __name__ == '__main__':
         print(f'Shape{N,K}, W2A8: {time0.median * 1e6:.2f}us, torch BF16: {time1.median * 1e6:.2f}us')
 
         for sparsity in s_list:
-            w_original, w_map_32_div, w_map_negative_32_div, W_map_delta2_div128, W_map_negative_delta2_div128 = prepare_w_map_fast(1, K, N, sparsity)
+            w_original, w_map, w_map_negative, w_map_32_div, w_map_negative_32_div, W_map_delta2_div128, W_map_negative_delta2_div128 = prepare_w_map_fast(1, K, N, sparsity)
 
             if args.matmul_test:
                 # don't forget to convert to column major since pytorch is row major!
