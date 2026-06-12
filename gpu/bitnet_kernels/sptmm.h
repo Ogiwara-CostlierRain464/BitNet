@@ -159,16 +159,16 @@ __global__ void prepareW_map(
         }
     }
 
-    int div128_cols = CEIL_DIV( (ctx.s /2), 128 );
+    int div128_cols = CEIL_DIV( (S /2), 128 );
     // See matrix as [128*N, S/256]
     for(int i = tid * 128; i < tid * 128 + 128; i++){
         for(int j = 0; j < div128_cols; j++){
             int original_row = j * 128 + i % 128;
             int original_col = i / 128;
 
-            if (original_row < ctx.s / 2){
-                AT(MAJOR_COL)(W_map_delta2_div128, 128 * ctx.n, div128_cols, i, j) = AT(W_MAJOR) (W_map_delta2_d, ctx.s / 2, ctx.n, original_row, original_col);
-                AT(MAJOR_COL)(W_map_negative_delta2_div128, 128 * ctx.n, div128_cols, i, j) = AT(W_MAJOR) (W_map_negative_delta2_d, ctx.s / 2, ctx.n, original_row, original_col);
+            if (original_row < S / 2){
+                AT(MAJOR_COL)(W_map_delta2_div128, 128 * N, div128_cols, i, j) = AT(W_MAJOR) (W_map_delta2_d, S / 2, N, original_row, original_col);
+                AT(MAJOR_COL)(W_map_negative_delta2_div128, 128 * N, div128_cols, i, j) = AT(W_MAJOR) (W_map_negative_delta2_d, S / 2, N, original_row, original_col);
             }
         }
     }
