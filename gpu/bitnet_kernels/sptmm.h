@@ -99,8 +99,13 @@ __global__ void prepareW_map(
         char * W, // working memory
         unsigned short* const W_map,
         unsigned short* const W_map_negative,
+
         unsigned short* const W_map_32_div,
         unsigned short* const W_map_negative_32_div,
+
+        unsigned char* const W_map_delta2_div128,
+        unsigned char* const W_map_negative_delta2_div128,
+
         int M, int K, int N, int S){
     u_int64_t tid = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -151,6 +156,20 @@ __global__ void prepareW_map(
             int original_col = i / 32;
             AT(MAJOR_COL)(W_map_32_div, 32 * N, S / 64, i, j) = AT(W_MAJOR) (W_map, S / 2, N, original_row, original_col);
             AT(MAJOR_COL)(W_map_negative_32_div, 32 * N, S / 64, i, j) = AT(W_MAJOR) (W_map_negative, S / 2, N, original_row, original_col);
+        }
+    }
+
+    int div128_cols = CEIL_DIV( (ctx.s /2), 128 );
+    // See matrix as [128*N, S/256]
+    for(int i = tid * 128; i < tid * 128 + 128; i++){
+        for(int j = 0; j < div128_cols; j++){
+            int original_row = j * 128 + i % 128;
+            int original_col = i / 128;
+
+            if (original_row < ctx.s / 2){
+                AT(MAJOR_COL)(W_map_delta2_div128, 128 * ctx.n, div128_cols, i, j) = AT(W_MAJOR) (W_map_delta2_d, ctx.s / 2, ctx.n, original_row, original_col);
+                AT(MAJOR_COL)(W_map_negative_delta2_div128, 128 * ctx.n, div128_cols, i, j) = AT(W_MAJOR) (W_map_negative_delta2_d, ctx.s / 2, ctx.n, original_row, original_col);
+            }
         }
     }
 }

@@ -61,12 +61,23 @@ def prepare_w_map_fast(m, k, n, s):
     w = torch.zeros((k, n), dtype=torch.int8, device='cuda')
     w_map = torch.zeros((s // 2, n), dtype=torch.int16 ,device='cuda')
     w_map_negative = torch.zeros((s // 2, n), dtype=torch.int16, device='cuda')
-    def alloc_div(div_nim):
+    def alloc_div_16bit(div_nim):
         rows = div_nim * n
         cols = s // 2 // div_nim
         return torch.zeros((rows, cols), dtype=torch.int16, device='cuda')
-    w_map_32_div = alloc_div(32)
-    w_map_negative_32_div = alloc_div(32)
+
+    def alloc_div_8bit(div_nim):
+        rows = div_nim * n
+        cols = s // 2 // div_nim
+        return torch.zeros((rows, cols), dtype=torch.int8, device='cuda')
+
+
+    w_map_32_div = alloc_div_16bit(32)
+    w_map_negative_32_div = alloc_div_16bit(32)
+
+    W_map_delta2_div128 = alloc_div_8bit(128)
+    W_map_negative_delta2_div128 = alloc_div_8bit(128)
+
 
     bitnet_lib.prepare_w_map(*[
         ctypes.c_void_p(w.data_ptr()),
@@ -74,66 +85,15 @@ def prepare_w_map_fast(m, k, n, s):
         ctypes.c_void_p(w_map_negative.data_ptr()),
         ctypes.c_void_p(w_map_32_div.data_ptr()),
         ctypes.c_void_p(w_map_negative_32_div.data_ptr()),
+        ctypes.c_void_p(W_map_delta2_div128.data_ptr()),
+        ctypes.c_void_p(W_map_negative_delta2_div128.data_ptr()),
         ctypes.c_int(m),
         ctypes.c_int(k),
         ctypes.c_int(n),
         ctypes.c_int(s),
         ctypes.c_void_p(stream.cuda_stream)])
 
-    return w_map_32_div, w_map_negative_32_div
-
-# Obsolete and slow
-def prepare_w_map(m, k, n, s):
-    w = torch.zeros((k, n), dtype=torch.int8)
-    w_map = torch.zeros((s // 2, n), dtype=torch.int16)
-    w_map_negative = torch.zeros((s // 2, n), dtype=torch.int16)
-
-    def alloc_div(div_nim):
-        rows = div_nim * n
-        cols = s // 2 // div_nim
-        return torch.zeros((rows, cols), dtype=torch.int16)
-
-    w_map_32_div = alloc_div(32)
-    w_map_negative_32_div = alloc_div(32)
-
-    for col in tqdm(range(n)):
-        w[:, col] = 0
-        w[:s//2, col] = -1
-        w[s//2:s, col] = 1
-        seed = (0xCAFEBABE ^ col) & 0xFFFFFFFF
-        for i in range(k-1, 0, -1):
-            j = xorshift32(seed) % (i+1)
-            tmp = w[i, col].item()
-            w[i,col] = w[j,col]
-            w[j,col] = tmp
-
-        count_1 = 0
-        count_m1 = 0
-        for i in range(k):
-            val = w[i,col].item()
-            if val == 1:
-                w_map[count_1, col] = i
-                count_1 += 1
-            elif val == -1:
-                w_map_negative[count_m1, col] = i
-                count_m1 += 1
-
-        assert count_1 == s // 2
-        assert count_m1 == s // 2
-
-        # div convert
-        assert s % 64 == 0
-        for i in range(col*32, col*32+32, 1):
-            for j in range(0, s // 64, 1):
-                original_row = j * 32 + i % 32
-                original_col = i // 32
-                w_map_32_div[i,j] = w_map[original_row, original_col]
-                w_map_negative_32_div[i,j] = w_map_negative[original_row, original_col]
-
-    # don't forget to convert to column major since pytorch is row major!
-    w_map_32_div = w_map_32_div.t().contiguous().t().to('cuda')
-    w_map_negative_32_div = w_map_negative_32_div.t().contiguous().t().to('cuda')
-    return w_map_32_div, w_map_negative_32_div
+    return w_map_32_div, w_map_negative_32_div, W_map_delta2_div128, W_map_negative_delta2_div128
 
 
 if __name__ == '__main__':
@@ -189,12 +149,13 @@ if __name__ == '__main__':
         print(f'Shape{N,K}, W2A8: {time0.median * 1e6:.2f}us, torch BF16: {time1.median * 1e6:.2f}us')
 
         for sparsity in s_list:
-            w_map_32_div, w_map_negative_32_div = prepare_w_map_fast(1, K, N, sparsity)
+            w_map_32_div, w_map_negative_32_div, W_map_delta2_div128, W_map_negative_delta2_div128 = prepare_w_map_fast(1, K, N, sparsity)
             t2 = benchmark.Timer(
                 stmt="sptmm(input0, w_map_32_div, w_map_negative_32_div, s, ws, ret, 1,K, N, sparsity)",
                 setup="from __main__ import input0, w_map_32_div, w_map_negative_32_div, s, ws, ret, sptmm, N, K, sparsity",
                 num_threads=1,
             )
+
             time2 = t2.blocked_autorange()
             print(f'SpTMM with {sparsity}% sparsity : {time2.median * 1e6:.2f}us')
 
