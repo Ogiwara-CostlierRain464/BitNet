@@ -30,6 +30,23 @@ def sptmm(x, w_map_32_div, w_map_neg_32_div, s, ws, ret, M, K, N, S):
     return ret
 
 
+def sptmm_delta(x, w_map_delta2_div128, w_map_negative_delta2_div128, s, ws, ret, M, K, N, S):
+    stream = torch.cuda.current_stream()
+
+    bitnet_lib.sptmm_delta(*[ctypes.c_void_p(x.data_ptr()),
+                       ctypes.c_void_p(w_map_delta2_div128.data_ptr()),
+                       ctypes.c_void_p(w_map_negative_delta2_div128.data_ptr()),
+                       ctypes.c_void_p(ret.data_ptr()),
+                       ctypes.c_void_p(s.data_ptr()),
+                       ctypes.c_void_p(ws.data_ptr()),
+                       ctypes.c_int(M),
+                       ctypes.c_int(K),
+                       ctypes.c_int(N),
+                       ctypes.c_int(S),
+                       ctypes.c_void_p(stream.cuda_stream)])
+    return ret
+
+
 def bitnet_int8xint2_linear(input0, input1, s, ws, ret):
     out_shape = list(input0.shape)
     out_shape[-1] = input1.shape[0]
@@ -160,8 +177,14 @@ if __name__ == '__main__':
                 setup="from __main__ import input0, w_map_32_div, w_map_negative_32_div, s, ws, ret, sptmm, N, K, sparsity",
                 num_threads=1,
             )
+            t3 = benchmark.Timer(
+                stmt="sptmm_delta(input0, W_map_delta2_div128, W_map_negative_delta2_div128, s, ws, ret, 1,K, N, sparsity)",
+                setup="from __main__ import input0, W_map_delta2_div128, W_map_negative_delta2_div128, s, ws, ret, sptmm, N, K, sparsity",
+                num_threads=1,
+            )
 
             time2 = t2.blocked_autorange()
-            print(f'SpTMM with {sparsity}% sparsity : {time2.median * 1e6:.2f}us')
+            time3 = t3.blocked_autorange()
+            print(f'SpTMM with {sparsity}% sparsity : {time2.median * 1e6:.2f}us, delta {time3.median * 1e6:.2f}us')
 
         

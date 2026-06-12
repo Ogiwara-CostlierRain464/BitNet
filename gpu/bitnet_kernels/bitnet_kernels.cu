@@ -100,3 +100,49 @@ extern "C" void sptmm(char* X_d, unsigned short* W_map_32_div_d, unsigned short*
         abort();
     }
 }
+
+extern "C" void sptmm_delta(char* X_d, unsigned char* W_map_delta2_div128_d, unsigned char* W_map_negative_delta2_div128_d, __nv_bfloat16* c_d, __nv_bfloat16* s, __nv_bfloat16* ws, int M, int K, int N, int S, cudaStream_t stream){
+    // Down
+    if(M == 1 && K == 6912 && N == 2560 && S == 5504){ // 20%
+        checkKernelErrors((rowWiseSplit2DeltaSmallAsync2_7<1, 6912, 2560, 5504, 1, 32, 4, int, 32><<< 2560 / 1, dim3(32,1,1), 0, stream >>>(X_d, W_map_delta2_div128_d,W_map_negative_delta2_div128_d, c_d)));
+    }else if(M == 1 && K == 6912 && N == 2560 && S == 4096){ // 40%
+        checkKernelErrors((rowWiseSplit2DeltaSmallAsync2_6<1, 6912, 2560, 4096, 1, 32, 4, int, 32><<< 2560 / 1, dim3(32,1,1), 0, stream >>>(X_d, W_map_delta2_div128_d,W_map_negative_delta2_div128_d, c_d)));
+    }else if(M == 1 && K == 6912 && N == 2560 && S == 2752){ // 60%
+        checkKernelErrors((rowWiseSplit2DeltaSmallAsync2_7<1, 6912, 2560, 2752, 1, 32, 4, int, 32><<< 2560 / 1, dim3(32,1,1), 0, stream >>>(X_d, W_map_delta2_div128_d,W_map_negative_delta2_div128_d, c_d)));
+    }else if(M == 1 && K == 6912 && N == 2560 && S == 1408){ // 80%
+        checkKernelErrors((rowWiseSplit2DeltaSmallAsync2_7<1, 6912, 2560, 1408, 1, 32, 4, int, 32><<< 2560 / 1, dim3(32,1,1), 0, stream >>>(X_d, W_map_delta2_div128_d,W_map_negative_delta2_div128_d, c_d)));
+
+    // Up & Gate
+    }else if(M == 1 && K == 2560 && N == 13824 && S == 2048){ // 20%
+        checkKernelErrors((rowWiseSplit2DeltaSmallAsync2_6<1, 2560, 13824, 2048, 2, 32, 4, int, 32><<< 13824 / 1, dim3(32,1,1), 0, stream >>>(X_d, W_map_delta2_div128_d,W_map_negative_delta2_div128_d, c_d)));
+    }else if(M == 1 && K == 2560 && N == 13824 && S == 1536){ // 40%
+        checkKernelErrors((rowWiseSplit2DeltaSmallAsync2_6<1, 2560, 13824, 1536, 2, 32, 4, int, 32><<< 13824 / 1, dim3(32,1,1), 0, stream >>>(X_d, W_map_delta2_div128_d,W_map_negative_delta2_div128_d, c_d)));
+    }else if(M == 1 && K == 2560 && N == 13824 && S == 1024){ // 60%
+        checkKernelErrors((rowWiseSplit2DeltaSmallAsync2_6<1, 2560, 13824, 1024, 2, 32, 4, int, 32><<< 13824 / 1, dim3(32,1,1), 0, stream >>>(X_d, W_map_delta2_div128_d,W_map_negative_delta2_div128_d, c_d)));
+    }else if(M == 1 && K == 2560 && N == 13824 && S == 512){ // 80%
+        checkKernelErrors((rowWiseSplit2DeltaSmallAsync2_6<1, 2560, 13824, 512, 2, 32, 4, int, 32><<< 13824 / 1, dim3(32,1,1), 0, stream >>>(X_d, W_map_delta2_div128_d,W_map_negative_delta2_div128_d, c_d)));
+
+    // Output
+    }else if(M == 1 && K == 2560 && N == 2560 && S == 2048) { // 20%
+        checkKernelErrors((rowWiseSplit2DeltaSmallAsync2_6<1, 2560, 2560, 2048, 1, 32, 4, int, 32><<< 2560 / 1, dim3(32,1,1), 0, stream >>>(X_d, W_map_delta2_div128_d,W_map_negative_delta2_div128_d, c_d)));
+    }else if(M == 1 && K == 2560 && N == 2560 && S == 1536) { // 40%
+        checkKernelErrors((rowWiseSplit2DeltaSmallAsync2_6<1, 2560, 2560, 1536, 1, 32, 4, int, 32><<< 2560 / 1, dim3(32,1,1), 0, stream >>>(X_d, W_map_delta2_div128_d,W_map_negative_delta2_div128_d, c_d)));
+    }else if(M == 1 && K == 2560 && N == 2560 && S == 1024) { // 60%
+        checkKernelErrors((rowWiseSplit2DeltaSmallAsync2_6<1, 2560, 2560, 1024, 1, 32, 4, int, 32><<< 2560 / 1, dim3(32,1,1), 0, stream >>>(X_d, W_map_delta2_div128_d,W_map_negative_delta2_div128_d, c_d)));
+    }else if(M == 1 && K == 2560 && N == 2560 && S == 512) { // 80%
+        checkKernelErrors((rowWiseSplit2DeltaSmallAsync2_6<1, 2560, 2560, 512, 1, 32, 4, int, 32><<< 2560 / 1, dim3(32,1,1), 0, stream >>>(X_d, W_map_delta2_div128_d,W_map_negative_delta2_div128_d, c_d)));
+
+    // Q & K & V
+    }else if(M == 1 && K == 2560 && N == 3840 && S == 2048) {
+        checkKernelErrors((rowWiseSplit2DeltaSmallAsync2_6<1, 2560, 3840, 2048, 3, 32, 4, int, 32><<< 3840 / 1, dim3(32,1,1), 0, stream >>>(X_d, W_map_delta2_div128_d,W_map_negative_delta2_div128_d, c_d)));
+    }else if(M == 1 && K == 2560 && N == 3840 && S == 1536) {
+        checkKernelErrors((rowWiseSplit2DeltaSmallAsync2_6<1, 2560, 3840, 1536, 3, 32, 4, int, 32><<< 3840 / 1, dim3(32,1,1), 0, stream >>>(X_d, W_map_delta2_div128_d,W_map_negative_delta2_div128_d, c_d)));
+    }else if(M == 1 && K == 2560 && N == 3840 && S == 1024) {
+        checkKernelErrors((rowWiseSplit2DeltaSmallAsync2_6<1, 2560, 3840, 1024, 3, 32, 4, int, 32><<< 3840 / 1, dim3(32,1,1), 0, stream >>>(X_d, W_map_delta2_div128_d,W_map_negative_delta2_div128_d, c_d)));
+    }else if(M == 1 && K == 2560 && N == 3840 && S == 512) {
+        checkKernelErrors((rowWiseSplit2DeltaSmallAsync2_6<1, 2560, 3840, 512, 3, 32, 4, int, 32><<< 3840 / 1, dim3(32,1,1), 0, stream >>>(X_d, W_map_delta2_div128_d,W_map_negative_delta2_div128_d, c_d)));
+    }else{
+        std::cout << "Wrong size. Check the domension: M " << M << ", N " << N << ", K " << K << std::endl;
+        abort();
+    }
+}
