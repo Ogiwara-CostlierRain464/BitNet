@@ -6,7 +6,7 @@ from tqdm import tqdm
 from pack_weight import convert_weight_int8_to_int2
 from torch.profiler import profile, record_function, ProfilerActivity
 import ctypes
-import numpy as
+import numpy as np
 import argparse
 # set all seed
 torch.manual_seed(42)
