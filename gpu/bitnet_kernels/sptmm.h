@@ -82,6 +82,8 @@ abort();                                              \
 
 #define W_MAJOR MAJOR_COL
 
+#define CEIL_DIV(M, N) (((M) + (N)-1) / (N))
+
 
 // helper func for creating vector
 // WARN: Do not use 0 as a seed!
@@ -99,6 +101,9 @@ __global__ void prepareW_map(
         char * W, // working memory
         unsigned short* const W_map,
         unsigned short* const W_map_negative,
+
+        unsigned char* const W_map_delta2_d,
+        unsigned char* const W_map_negative_delta2_d,
 
         unsigned short* const W_map_32_div,
         unsigned short* const W_map_negative_32_div,
@@ -145,6 +150,28 @@ __global__ void prepareW_map(
     }
 
     assert(count_1 == S/ 2 && count_m1 == S / 2 && "W matrix corrupt");
+
+    __syncthreads();
+
+    for(int i = 0; i < S/2; i++){
+        if(i==0){
+            AT(W_MAJOR)(W_map_delta2_d, S / 2, N, i, col)
+                = AT(W_MAJOR) (W_map, S / 2, N, i, col);
+        }else{
+            AT(W_MAJOR)(W_map_delta2_d, S / 2, N, i, col)
+                = AT(W_MAJOR) (W_map, S / 2, N, i, col) - AT(W_MAJOR) (W_map, S / 2, N, i-1, col);
+        }
+    }
+
+    for(int i = 0; i < S/2; i++){
+        if(i==0){
+            AT(W_MAJOR)(W_map_negative_2_d, S / 2, N, i, col)
+                = AT(W_MAJOR) (W_map_negative, S / 2, N, i, col);
+        }else{
+            AT(W_MAJOR)(W_map_negative_delta2_d, S / 2, N, i, col)
+                = AT(W_MAJOR) (W_map_negative, S / 2, N, i, col) - AT(W_MAJOR) (W_map_negative, S / 2, N, i-1, col);
+        }
+    }
 
     __syncthreads();
 

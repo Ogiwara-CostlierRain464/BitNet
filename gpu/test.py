@@ -72,6 +72,9 @@ def prepare_w_map_fast(m, k, n, s):
         return torch.zeros((rows, cols), dtype=torch.int8, device='cuda')
 
 
+    W_map_delta2_d = torch.zeros((s // 2, n), dtype=torch.int8 ,device='cuda')
+    W_map_negative_delta2_d = torch.zeros((s // 2, n), dtype=torch.int8, device='cuda')
+
     w_map_32_div = alloc_div_16bit(32)
     w_map_negative_32_div = alloc_div_16bit(32)
 
@@ -83,6 +86,8 @@ def prepare_w_map_fast(m, k, n, s):
         ctypes.c_void_p(w.data_ptr()),
         ctypes.c_void_p(w_map.data_ptr()),
         ctypes.c_void_p(w_map_negative.data_ptr()),
+        ctypes.c_void_p(W_map_delta2_d.data_ptr()),
+        ctypes.c_void_p(W_map_negative_delta2_d.data_ptr()),
         ctypes.c_void_p(w_map_32_div.data_ptr()),
         ctypes.c_void_p(w_map_negative_32_div.data_ptr()),
         ctypes.c_void_p(W_map_delta2_div128.data_ptr()),
