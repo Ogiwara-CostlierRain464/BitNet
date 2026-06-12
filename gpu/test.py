@@ -6,7 +6,8 @@ from tqdm import tqdm
 from pack_weight import convert_weight_int8_to_int2
 from torch.profiler import profile, record_function, ProfilerActivity
 import ctypes
-import numpy as np
+import numpy as
+import argparse
 # set all seed
 torch.manual_seed(42)
 np.random.seed(42)
@@ -119,6 +120,14 @@ def prepare_w_map_fast(m, k, n, s):
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        '--matmul_test',
+        action='store_true',
+        help='Verify SpTMM output correctness'
+    )
+    args = parser.parse_args()
+
     test_list = [
         (2560, 6912, [5504, 4096, 2752, 1408]), # N, K  # Down
         (13824, 2560, [2048, 1536, 1024, 512]), # Up & Gate
@@ -151,6 +160,8 @@ if __name__ == '__main__':
         weight_fp16 = weight.to(torch.float16).T
         weight_bf16 = weight.to(torch.bfloat16).T
         ret = torch.empty((1,N), dtype=torch.bfloat16, device=input0.device)
+        ret_sptmm = torch.empty((1,N), dtype=torch.bfloat16, device=input0.device)
+        ret_sptmm_delta = torch.empty((1,N), dtype=torch.bfloat16, device=input0.device)
         s = torch.ones(1, dtype=torch.bfloat16, device='cuda')
         ws = torch.ones(6, dtype=torch.bfloat16, device='cuda')
         t0 = benchmark.Timer(
@@ -172,19 +183,34 @@ if __name__ == '__main__':
 
         for sparsity in s_list:
             w_map_32_div, w_map_negative_32_div, W_map_delta2_div128, W_map_negative_delta2_div128 = prepare_w_map_fast(1, K, N, sparsity)
-            t2 = benchmark.Timer(
-                stmt="sptmm(input0, w_map_32_div, w_map_negative_32_div, s, ws, ret, 1,K, N, sparsity)",
-                setup="from __main__ import input0, w_map_32_div, w_map_negative_32_div, s, ws, ret, sptmm, N, K, sparsity",
-                num_threads=1,
-            )
-            t3 = benchmark.Timer(
-                stmt="sptmm_delta(input0, W_map_delta2_div128, W_map_negative_delta2_div128, s, ws, ret, 1,K, N, sparsity)",
-                setup="from __main__ import input0, W_map_delta2_div128, W_map_negative_delta2_div128, s, ws, ret, sptmm_delta, N, K, sparsity",
-                num_threads=1,
-            )
 
-            time2 = t2.blocked_autorange()
-            time3 = t3.blocked_autorange()
-            print(f'SpTMM with {sparsity}% sparsity : {time2.median * 1e6:.2f}us, delta {time3.median * 1e6:.2f}us')
+            if args.matmul_test:
+                sptmm(input0, w_map_32_div, w_map_negative_32_div, s, ws, ret_sptmm, 1,K, N, sparsity)
+                sptmm_success = torch.all(ret_sptmm == ret)
+
+                sptmm_delta(input0, W_map_delta2_div128, W_map_negative_delta2_div128, s, ws, ret_sptmm_delta, 1,K, N, sparsity)
+                sptmm_delta_success = torch.all(ret_sptmm_delta == ret)
+
+                print(
+                    f"Sparsity {sparsity}%: "
+                    f"SpTMM == numpy {sptmm_success}, "
+                    f"Delta == numpy {sptmm_delta_success}"
+                )
+
+            else:
+                t2 = benchmark.Timer(
+                    stmt="sptmm(input0, w_map_32_div, w_map_negative_32_div, s, ws, ret_sptmm, 1,K, N, sparsity)",
+                    setup="from __main__ import input0, w_map_32_div, w_map_negative_32_div, s, ws, ret_sptmm, sptmm, N, K, sparsity",
+                    num_threads=1,
+                )
+                t3 = benchmark.Timer(
+                    stmt="sptmm_delta(input0, W_map_delta2_div128, W_map_negative_delta2_div128, s, ws, ret_sptmm_delta, 1,K, N, sparsity)",
+                    setup="from __main__ import input0, W_map_delta2_div128, W_map_negative_delta2_div128, s, ws, ret_sptmm_delta, sptmm_delta, N, K, sparsity",
+                    num_threads=1,
+                )
+
+                time2 = t2.blocked_autorange()
+                time3 = t3.blocked_autorange()
+                print(f'SpTMM with {sparsity}% sparsity : {time2.median * 1e6:.2f}us, delta {time3.median * 1e6:.2f}us')
 
         
