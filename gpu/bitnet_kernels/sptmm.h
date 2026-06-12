@@ -341,7 +341,7 @@ __global__ void __launch_bounds__(BLOCK_SIZE) rowWiseSplit2DeltaSmallAsync2_6(
 
     int ws_idx = c_col / (N_ / ws_num);
     if (threadIdx.x == 0) {
-        [m_row * N_ + c_col] = (__nv_bfloat16)(  ((float)accum) / (float)s[0]*(float)ws[ws_idx]  ) ;
+        C[m_row * N_ + c_col] = (__nv_bfloat16)(  ((float)accum) / (float)s[0]*(float)ws[ws_idx]  ) ;
     }
 }
 
