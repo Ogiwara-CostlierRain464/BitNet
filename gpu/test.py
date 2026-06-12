@@ -186,10 +186,10 @@ if __name__ == '__main__':
 
             if args.matmul_test:
                 sptmm(input0, w_map_32_div, w_map_negative_32_div, s, ws, ret_sptmm, 1,K, N, sparsity)
-                sptmm_success = torch.all(ret_sptmm == ret)
+                sptmm_success = torch.all(ret_sptmm == out_np)
 
                 sptmm_delta(input0, W_map_delta2_div128, W_map_negative_delta2_div128, s, ws, ret_sptmm_delta, 1,K, N, sparsity)
-                sptmm_delta_success = torch.all(ret_sptmm_delta == ret)
+                sptmm_delta_success = torch.all(ret_sptmm_delta == out_np)
 
                 print(
                     f"Sparsity {sparsity}%: "
