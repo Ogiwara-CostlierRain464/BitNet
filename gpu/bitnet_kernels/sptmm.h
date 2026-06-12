@@ -8,6 +8,34 @@
 #include <cuda_bf16.h>
 #include <cassert>
 
+static const char *_cudaGetErrorEnum(cudaError_t error) {
+    return cudaGetErrorName(error);
+}
+
+template <typename T>
+void check(T result, char const *const func, const char *const file,
+           int const line) {
+    if (result) {
+        fprintf(stderr, "CUDA error at %s:%d code=%d(%s) \"%s\" \n", file, line,
+                static_cast<unsigned int>(result), _cudaGetErrorEnum(result), func);
+        exit(EXIT_FAILURE);
+    }
+}
+#define checkCudaErrors(val) check((val), #val, __FILE__, __LINE__)
+
+#define checkKernelErrors(expr)                             \
+do {                                                      \
+expr;                                                   \
+\
+cudaError_t __err = cudaGetLastError();                 \
+if (__err != cudaSuccess) {                             \
+printf("Line %d: '%s' failed: %s\n", __LINE__, #expr, \
+cudaGetErrorString(__err));                    \
+abort();                                              \
+}                                                       \
+} while (0)
+
+
 #ifndef NDEBUG
 #define AT_0(mat, row_dim, col_dim, row, col)                                        \
     (*({                                                                             \

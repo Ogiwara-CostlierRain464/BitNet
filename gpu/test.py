@@ -183,10 +183,10 @@ if __name__ == '__main__':
             num_threads=1,
         )
 
-        time0 = t0.timeit(50)
-        time1 = t1.timeit(50)
+        time0 = t0.blocked_autorange()
+        time1 = t1.blocked_autorange()
 
-        print(f'Shape{N,K}, W2A8: {time0.mean * 1e6:.2f}us, torch BF16: {time1.mean * 1e6:.2f}us')
+        print(f'Shape{N,K}, W2A8: {time0.median * 1e6:.2f}us, torch BF16: {time1.median * 1e6:.2f}us')
 
         for sparsity in s_list:
             w_map_32_div, w_map_negative_32_div = prepare_w_map_fast(1, K, N, sparsity)
@@ -195,7 +195,7 @@ if __name__ == '__main__':
                 setup="from __main__ import input0, w_map_32_div, w_map_negative_32_div, s, ws, ret, sptmm, N, K, sparsity",
                 num_threads=1,
             )
-            time2 = t2.timeit(50)
-            print(f'SpTMM with {sparsity}% sparsity : {time2.mean * 1e6:.2f}us')
+            time2 = t2.blocked_autorange()
+            print(f'SpTMM with {sparsity}% sparsity : {time2.median * 1e6:.2f}us')
 
         
