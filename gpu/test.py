@@ -199,7 +199,7 @@ if __name__ == '__main__':
                 sptmm_delta_success = torch.all(ret_sptmm_delta == expected)
 
                 print(
-                    f"Sparsity {sparsity / K * 100}%: "
+                    f"Sparsity {sparsity / K * 100:.2f}%: "
                     f"SpTMM == numpy {sptmm_success}, "
                     f"Delta == numpy {sptmm_delta_success}"
                 )
@@ -218,6 +218,6 @@ if __name__ == '__main__':
 
                 time2 = t2.timeit(100000)
                 time3 = t3.timeit(100000)
-                print(f'SpTMM with {sparsity / K * 100}% sparsity : {time2.median * 1e6:.2f}us, delta {time3.median * 1e6:.2f}us')
+                print(f'SpTMM with {sparsity / K * 100:.2f}% sparsity : {time2.median * 1e6:.2f}us, delta {time3.median * 1e6:.2f}us')
 
         
