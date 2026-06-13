@@ -82,54 +82,54 @@ if __name__ == "__main__":
 
         torch.save(m_40.state_dict(), "sptmm_40.pt")
 
-    m_60 = model.Transformer(model.ModelArgs(use_kernel=False, use_sptmm=True, sparsity=60))
-
-    with torch.no_grad():
-        for i in range(30):
-            result = prepare_w_map_fast(1,2560,3840,1024)
-            wqkv, wqkv_neg = result[3:5]
-            m_60.layers[i].attention.wqkv.w_map_32_div.copy_(wqkv)
-            m_60.layers[i].attention.wqkv.w_map_negative_32_div.copy_(wqkv_neg)
-
-            result = prepare_w_map_fast(1,2560,2560,1024)
-            wo, wo_neg = result[3:5]
-            m_60.layers[i].attention.wo.w_map_32_div.copy_(wo)
-            m_60.layers[i].attention.wo.w_map_negative_32_div.copy_(wo_neg)
-
-            result = prepare_w_map_fast(1,2560,13824,1024)
-            w13, w13_neg = result[3:5]
-            m_60.layers[i].feed_forward.w13.w_map_32_div.copy_(w13)
-            m_60.layers[i].feed_forward.w13.w_map_negative_32_div.copy_(w13_neg)
-
-            result = prepare_w_map_fast(1,6912,2560,2752)
-            w2, w2_neg = result[3:5]
-            m_60.layers[i].feed_forward.w2.w_map_32_div.copy_(w2)
-            m_60.layers[i].feed_forward.w2.w_map_negative_32_div.copy_(w2_neg)
-
-        torch.save(m_60.state_dict(), "sptmm_60.pt")
-
-    m_80 = model.Transformer(model.ModelArgs(use_kernel=False, use_sptmm=True, sparsity=80))
-
-    with torch.no_grad():
-        for i in range(30):
-            result = prepare_w_map_fast(1,2560,3840,512)
-            wqkv, wqkv_neg = result[3:5]
-            m_80.layers[i].attention.wqkv.w_map_32_div.copy_(wqkv)
-            m_80.layers[i].attention.wqkv.w_map_negative_32_div.copy_(wqkv_neg)
-
-            result  = prepare_w_map_fast(1,2560,2560,512)
-            wo, wo_neg = result[3:5]
-            m_80.layers[i].attention.wo.w_map_32_div.copy_(wo)
-            m_80.layers[i].attention.wo.w_map_negative_32_div.copy_(wo_neg)
-
-            result = prepare_w_map_fast(1,2560,13824,512)
-            w13, w13_neg = result[3:5]
-            m_80.layers[i].feed_forward.w13.w_map_32_div.copy_(w13)
-            m_80.layers[i].feed_forward.w13.w_map_negative_32_div.copy_(w13_neg)
-
-            result = prepare_w_map_fast(1,6912,2560,1408)
-            w2, w2_neg = result[3:5]
-            m_80.layers[i].feed_forward.w2.w_map_32_div.copy_(w2)
-            m_80.layers[i].feed_forward.w2.w_map_negative_32_div.copy_(w2_neg)
-
-        torch.save(m_80.state_dict(), "sptmm_80.pt")
+    # m_60 = model.Transformer(model.ModelArgs(use_kernel=False, use_sptmm=True, sparsity=60))
+    #
+    # with torch.no_grad():
+    #     for i in range(30):
+    #         result = prepare_w_map_fast(1,2560,3840,1024)
+    #         wqkv, wqkv_neg = result[3:5]
+    #         m_60.layers[i].attention.wqkv.w_map_32_div.copy_(wqkv)
+    #         m_60.layers[i].attention.wqkv.w_map_negative_32_div.copy_(wqkv_neg)
+    #
+    #         result = prepare_w_map_fast(1,2560,2560,1024)
+    #         wo, wo_neg = result[3:5]
+    #         m_60.layers[i].attention.wo.w_map_32_div.copy_(wo)
+    #         m_60.layers[i].attention.wo.w_map_negative_32_div.copy_(wo_neg)
+    #
+    #         result = prepare_w_map_fast(1,2560,13824,1024)
+    #         w13, w13_neg = result[3:5]
+    #         m_60.layers[i].feed_forward.w13.w_map_32_div.copy_(w13)
+    #         m_60.layers[i].feed_forward.w13.w_map_negative_32_div.copy_(w13_neg)
+    #
+    #         result = prepare_w_map_fast(1,6912,2560,2752)
+    #         w2, w2_neg = result[3:5]
+    #         m_60.layers[i].feed_forward.w2.w_map_32_div.copy_(w2)
+    #         m_60.layers[i].feed_forward.w2.w_map_negative_32_div.copy_(w2_neg)
+    #
+    #     torch.save(m_60.state_dict(), "sptmm_60.pt")
+    #
+    # m_80 = model.Transformer(model.ModelArgs(use_kernel=False, use_sptmm=True, sparsity=80))
+    #
+    # with torch.no_grad():
+    #     for i in range(30):
+    #         result = prepare_w_map_fast(1,2560,3840,512)
+    #         wqkv, wqkv_neg = result[3:5]
+    #         m_80.layers[i].attention.wqkv.w_map_32_div.copy_(wqkv)
+    #         m_80.layers[i].attention.wqkv.w_map_negative_32_div.copy_(wqkv_neg)
+    #
+    #         result  = prepare_w_map_fast(1,2560,2560,512)
+    #         wo, wo_neg = result[3:5]
+    #         m_80.layers[i].attention.wo.w_map_32_div.copy_(wo)
+    #         m_80.layers[i].attention.wo.w_map_negative_32_div.copy_(wo_neg)
+    #
+    #         result = prepare_w_map_fast(1,2560,13824,512)
+    #         w13, w13_neg = result[3:5]
+    #         m_80.layers[i].feed_forward.w13.w_map_32_div.copy_(w13)
+    #         m_80.layers[i].feed_forward.w13.w_map_negative_32_div.copy_(w13_neg)
+    #
+    #         result = prepare_w_map_fast(1,6912,2560,1408)
+    #         w2, w2_neg = result[3:5]
+    #         m_80.layers[i].feed_forward.w2.w_map_32_div.copy_(w2)
+    #         m_80.layers[i].feed_forward.w2.w_map_negative_32_div.copy_(w2_neg)
+    #
+    #     torch.save(m_80.state_dict(), "sptmm_80.pt")
