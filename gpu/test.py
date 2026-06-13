@@ -177,8 +177,8 @@ if __name__ == '__main__':
             num_threads=1,
         )
 
-        time0 = t0.blocked_autorange()
-        time1 = t1.blocked_autorange()
+        time0 = t0.timeit(100000)
+        time1 = t1.timeit(100000)
 
         print(f'Shape{N,K}, W2A8: {time0.median * 1e6:.2f}us, torch BF16: {time1.median * 1e6:.2f}us')
 
@@ -216,8 +216,8 @@ if __name__ == '__main__':
                     num_threads=1,
                 )
 
-                time2 = t2.blocked_autorange()
-                time3 = t3.blocked_autorange()
+                time2 = t2.timeit(100000)
+                time3 = t3.timeit(100000)
                 print(f'SpTMM with {sparsity / K * 100}% sparsity : {time2.median * 1e6:.2f}us, delta {time3.median * 1e6:.2f}us')
 
         
