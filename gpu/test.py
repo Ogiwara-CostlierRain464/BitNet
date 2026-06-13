@@ -188,7 +188,7 @@ if __name__ == '__main__':
             if args.matmul_test:
                 # don't forget to convert to column major since pytorch is row major!
                 w_original = w_original.t().contiguous().t().to('cuda')
-                w_original = w_original.reshape(-1).reshape(2560, 6912).t()
+                w_original = w_original.reshape(-1).reshape(N, K).t()
                 w_original_bf16 = w_original.to(torch.bfloat16)
                 expected = torch.matmul(input0_bf16,w_original_bf16)
 
