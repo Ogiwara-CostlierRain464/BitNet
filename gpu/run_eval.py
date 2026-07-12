@@ -76,7 +76,7 @@ class FastGen:
         print(f"loaded model in {time.time() - start_time:.2f} seconds")
         start_time = time.time()
 
-        return FastGen(gen_args, model_args_prefill, prefill_model, decode_model, tokenizer)
+        return FastGen(gen_args, model_args_prefill, prefill_model, decode_model, tokenizer, device)
 
     def __init__(
             self,
@@ -85,7 +85,9 @@ class FastGen:
             prefill_model: fast.Transformer,
             decode_model: fast.Transformer,
             tokenizer: Tokenizer,
+            device: Union[torch.device, str],
     ):
+        self.device = device
         self.gen_args = args
         self.max_seq_length = args.prompt_length + args.gen_length
         self.model_args = model_args
@@ -111,15 +113,15 @@ class FastGen:
 
         seq_lens = [self.gen_args.prompt_length for _ in range(self.gen_args.gen_bsz)]
 
+        torch.cuda.set_device(self.device)
+
         bias = AttnBias.from_seqlens(
             q_seqlen=seq_lens,
             kv_seqlen=seq_lens,
             kv_padding=self.max_seq_length,
         )
-        bias.q_seqinfo.to("cuda")
-        bias.k_seqinfo.to("cuda")
 
-        tokens = torch.IntTensor([1] * self.gen_args.gen_bsz * self.gen_args.prompt_length).cuda()
+        tokens = torch.tensor([1] * self.gen_args.gen_bsz * self.gen_args.prompt_length, dtype=torch.int32, device=self.device)
         self._prefill_inputs = (tokens, bias)
 
         s = torch.cuda.Stream()
@@ -169,15 +171,15 @@ class FastGen:
         seq_lens = [1 for _ in range(self.gen_args.gen_bsz)]
         kv_seq_lens = [self.gen_args.prompt_length for _ in range(self.gen_args.gen_bsz)]
 
+        torch.cuda.set_device(self.device)
+
         bias = AttnBias.from_seqlens(
             q_seqlen=seq_lens,
             kv_seqlen=kv_seq_lens,
             kv_padding=self.max_seq_length,
         )
-        bias.q_seqinfo.to("cuda")
-        bias.k_seqinfo.to("cuda")
 
-        tokens = torch.IntTensor([1] * self.gen_args.gen_bsz).cuda()
+        tokens = torch.tensor([1] * self.gen_args.gen_bsz, dtype=torch.int32, device=self.device)
         self._generate_inputs = (tokens, bias)
 
         s = torch.cuda.Stream()
@@ -227,19 +229,19 @@ class FastGen:
         max_seq_length = max_prompt_length + gen_length
         print(max_prompt_length, gen_length)
 
+        torch.cuda.set_device(self.device)
+
         bias = AttnBias.from_seqlens(
             q_seqlen=padded_prompt_lens,
             kv_seqlen=prompt_lens,
             kv_padding=max_seq_length,
         )
-        bias.q_seqinfo.to("cuda")
-        bias.k_seqinfo.to("cuda")
 
         # Input tensors to the cuda graph
         kv_seqlen = bias.k_seqinfo.seqlen
         prompts = [prompt + [1] * (self.gen_args.prompt_length - len(prompt)) for prompt in prompts]
-        tokens = torch.IntTensor(sum(prompts, [])).cuda()
-        out_tokens = torch.zeros((max_seq_length, bs), dtype=torch.int)
+        tokens = torch.tensor(sum(prompts, []), dtype=torch.int32, device=self.device)
+        out_tokens = torch.zeros((max_seq_length, bs), dtype=torch.int32, device=self.device)
 
         stats = Stats()
         torch.cuda.synchronize()
@@ -306,10 +308,10 @@ class FastGen:
         return stats, answers
 
 class FastGenWrapper(LM):
-    def __init__(self, ckpt_dir: str, batch_size: int = 1, prompt_length: int = 1024, gen_length: int = 256):
+    def __init__(self, ckpt_dir: str, batch_size: int = 1, prompt_length: int = 1024, gen_length: int = 256, device: str = "cuda:0"):
         super().__init__()
         self._batch_size = batch_size
-        self._device = "cuda:0"
+        self._device = device
 
         # モデルの初期化
         self.gen_args = GenArgs(
@@ -397,6 +399,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=1)
     parser.add_argument("--prompt_length", type=int, default=1024)
     parser.add_argument("--gen_length", type=int, default=256)
+    parser.add_argument("--device", type=str, default="cuda:0", help="使用するデバイス (例: cuda:0, cuda:1)")
     args = parser.parse_args()
 
     # ラッパー経由でモデルをセットアップ
@@ -404,7 +407,8 @@ if __name__ == "__main__":
         ckpt_dir=args.ckpt_dir,
         batch_size=args.batch_size,
         prompt_length=args.prompt_length,
-        gen_length=args.gen_length
+        gen_length=args.gen_length,
+        device=args.device
     )
 
     print(f"--- 評価を開始します: タスク={args.tasks} ---")
