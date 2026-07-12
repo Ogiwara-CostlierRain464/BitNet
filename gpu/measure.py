@@ -30,6 +30,10 @@ class MatMulType(Enum):
     BITNET_CPP = 2
     SPTMM = 3
 
+class WeightType(Enum):
+    NORMAL = 1 # use normal and distributed version
+    ALIGNED_RANDOMLY = 2
+
 @dataclass
 class GenArgs:
     gen_length: int = 1024
@@ -41,6 +45,7 @@ class GenArgs:
     top_p: float = 0.9
     matmul_type: MatMulType = MatMulType.CUBLAS_FP16
     sparsity: int = 40 # 40, 60, 80
+    weight_type: WeightType = WeightType.NORMAL
 
 
 class FastGen:
@@ -83,6 +88,8 @@ class FastGen:
 
         fp16_ckpt_path = str(Path(ckpt_dir) / "model_state_fp16.pt")
         fp16_checkpoint = torch.load(fp16_ckpt_path, map_location="cpu", weights_only=True)
+        aligned_randomly_ckpt_path = str(Path(ckpt_dir) / "aligned_randomly.pt")
+        aligned_randomly_checkpoint = torch.load(aligned_randomly_ckpt_path, map_location="cpu", weights_only=True)
         int2_ckpt_path = str(Path(ckpt_dir) / "model_state_int2.pt")
         int2_checkpoint = torch.load(int2_ckpt_path, map_location="cpu", weights_only=True)
         sptmm_ckpt_path = str(Path(ckpt_dir) / ({40: "sptmm_40.pt", 60: "sptmm_60.pt", 80: "sptmm_80.pt"}[gen_args.sparsity]))
@@ -90,10 +97,17 @@ class FastGen:
         #partial_sptmm_ckpt_path = str(Path(ckpt_dir) / "partial_sptmm.pt")
         #partial_sptmm_checkpoint = torch.load(partial_sptmm_ckpt_path, map_location="cpu", weights_only=True)
 
-        prefill_model.load_state_dict(fp16_checkpoint, strict=True)
+        if gen_args.weight_type == WeightType.ALIGNED_RANDOMLY:
+            prefill_model.load_state_dict(aligned_randomly_checkpoint, strict=True)
+        else:
+            prefill_model.load_state_dict(fp16_checkpoint, strict=True)
+
 
         if gen_args.matmul_type == MatMulType.CUBLAS_FP16:
-            decode_model.load_state_dict(fp16_checkpoint, strict=True)
+            if gen_args.weight_type == WeightType.ALIGNED_RANDOMLY:
+                decode_model.load_state_dict(aligned_randomly_checkpoint, strict=True)
+            else:
+                decode_model.load_state_dict(fp16_checkpoint, strict=True)
         elif gen_args.matmul_type == MatMulType.BITNET_CPP:
             decode_model.load_state_dict(int2_checkpoint, strict=True)
         else:
@@ -353,7 +367,7 @@ def get_prompts(interactive: bool) -> Iterable[list[str]]:
         ]
 
 
-def main(matmul_type: str, sampling: bool = False):
+def main(matmul_type: str, weight_type: str = "normal", sampling: bool = False):
 
     local_rank = os.getenv("CUDA_VISIBLE_DEVICES")
     if local_rank is None:
@@ -367,12 +381,16 @@ def main(matmul_type: str, sampling: bool = False):
         else MatMulType.BITNET_CPP if matmul_type == "bitnet.cpp" \
         else MatMulType.SPTMM
 
+    weight_type_enum = WeightType.NORMAL if weight_type == "normal" \
+        else WeightType.ALIGNED_RANDOMLY
+
     print(f"matmul_type_enum: {matmul_type_enum}")
+    print(f"weight_type_enum: {weight_type_enum}")
 
     # make model
-    g = FastGen.build("./checkpoints/", GenArgs( matmul_type=matmul_type_enum  ), device)
+    g = FastGen.build("./checkpoints/", GenArgs( matmul_type=matmul_type_enum, weight_type=weight_type_enum  ), device)
 
-    prompts = ["1+1="]
+    prompts = ["The weather today is "]
 
     tokens = [g.tokenizer.encode(x, bos=False, eos=False) for x in prompts]
 

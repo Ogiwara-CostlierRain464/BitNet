@@ -80,7 +80,7 @@ if __name__ == "__main__":
             m_40.layers[i].feed_forward.w2.w_map_32_div.copy_(w2)
             m_40.layers[i].feed_forward.w2.w_map_negative_32_div.copy_(w2_neg)
 
-        torch.save(m_40.state_dict(), "sptmm_40.pt")
+        torch.save(m_40.state_dict(), "./checkpoints/sptmm_40.pt")
 
     # m_60 = model.Transformer(model.ModelArgs(use_kernel=False, use_sptmm=True, sparsity=60))
     #
