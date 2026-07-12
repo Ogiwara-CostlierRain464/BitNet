@@ -12,6 +12,7 @@ import os
 import readline  # type: ignore # noqa
 import sys
 import time
+from tqdm import tqdm
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Optional, Tuple, Union
@@ -227,7 +228,7 @@ class FastGen:
         max_prompt_length = max(prompt_lens)
         gen_length = self.gen_args.gen_length
         max_seq_length = max_prompt_length + gen_length
-        print(max_prompt_length, gen_length)
+        #print(max_prompt_length, gen_length)
 
         torch.cuda.set_device(self.device)
 
@@ -326,7 +327,7 @@ class FastGenWrapper(LM):
         results = []
 
         # 指定されたバッチサイズごとに処理
-        for i in range(0, len(requests), self._batch_size):
+        for i in tqdm(range(0, len(requests), self._batch_size), desc="Running eval"):
             chunk = requests[i : i + self._batch_size]
             pad_len = self._batch_size - len(chunk)
 
