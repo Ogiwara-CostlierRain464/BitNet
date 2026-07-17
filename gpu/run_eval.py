@@ -69,6 +69,7 @@ class FastGen:
         decode_model = fast.Transformer(model_args_decode)
 
         fp16_ckpt_path = str(Path(ckpt_dir) / "model_state_fp16.pt")
+        #fp16_ckpt_path = str(Path(ckpt_dir) / "aligned_randomly.pt")
         fp16_checkpoint = torch.load(fp16_ckpt_path, map_location="cpu", weights_only=True)
         prefill_model.load_state_dict(fp16_checkpoint, strict=True)
         decode_model.load_state_dict(fp16_checkpoint, strict=True)
@@ -329,7 +330,7 @@ class FastGenWrapper(LM):
         # 指定されたバッチサイズごとに処理
         for i in tqdm(range(0, len(requests), self._batch_size), desc="Running eval"):
             chunk = requests[i : i + self._batch_size]
-            pad_len = self._batch_size - len(chunk)
+            pad_len = self._batch_size - len(chunk) # normally 0
 
             prompts = [req.args[0] for req in chunk]
             untils = [req.args[1].get("until", []) for req in chunk]
@@ -419,6 +420,7 @@ if __name__ == "__main__":
         model=model_wrapper,
         tasks=args.tasks.split(","),
         batch_size=args.batch_size,
+        confirm_run_unsafe_code=True, # to run humaneval
     )
 
     # 結果の表示
