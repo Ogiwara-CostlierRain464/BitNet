@@ -68,8 +68,9 @@ class FastGen:
         prefill_model = fast.Transformer(model_args_prefill)
         decode_model = fast.Transformer(model_args_decode)
 
-        fp16_ckpt_path = str(Path(ckpt_dir) / "model_state_fp16.pt")
+        #fp16_ckpt_path = str(Path(ckpt_dir) / "model_state_fp16.pt")
         #fp16_ckpt_path = str(Path(ckpt_dir) / "aligned_randomly.pt")
+        fp16_ckpt_path = str(Path(ckpt_dir) / "pruned_randomly.pt")
         fp16_checkpoint = torch.load(fp16_ckpt_path, map_location="cpu", weights_only=True)
         prefill_model.load_state_dict(fp16_checkpoint, strict=True)
         decode_model.load_state_dict(fp16_checkpoint, strict=True)
