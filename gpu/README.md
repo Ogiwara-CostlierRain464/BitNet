@@ -49,7 +49,7 @@ python3 ./generate.py ./checkpoints/ --interactive --chat_format
 # Inference with SpTMM
 python3 ./generate_sptmm.py ./checkpoints/ --interactive --chat_format
 
-python3 measure.py 
+python3 measure.py "cublas16" --weight_type="normal" 
 
 # we need
 apt install software-properties-common

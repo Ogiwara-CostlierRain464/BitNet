@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 from dataclasses import dataclass
-from typing import Optional, Tuple, Union
+from typing import Optional, Tuple, Union, List
 
 import torch
 from torch import nn
@@ -16,7 +16,12 @@ from xformers.ops.fmha.attn_bias import (
 )
 
 import ctypes
-bitnet_lib = ctypes.CDLL('bitnet_kernels/libbitnet.so')
+from pathlib import Path
+
+_this_dir = Path(__file__).resolve().parent
+lib_path = _this_dir / "bitnet_kernels" / "libbitnet.so"
+
+bitnet_lib = ctypes.CDLL(str(lib_path))
 
 def bitnet_int8xint2_linear(input0, input1, s, ws):
     out_shape = list(input0.shape)
@@ -374,7 +379,7 @@ class Transformer(nn.Module):
         self,
         token_values: torch.Tensor,
         attn_bias: AttnBias,
-        cache: list[LayerCache],
+        cache: List[LayerCache],
     ) -> torch.Tensor:
         h = self.tok_embeddings(token_values)
 
@@ -389,7 +394,7 @@ class Transformer(nn.Module):
         token_values: torch.Tensor,
         token_lengths: torch.Tensor,
         start_pos: torch.Tensor,
-        cache: list[LayerCache],
+        cache: List[LayerCache],
         kv_padding: int,
     ) -> torch.Tensor:
         attn_bias = AttnBias.from_seqlens(
@@ -406,7 +411,7 @@ def make_cache(
     device: Optional[Union[str, torch.device]] = None,
     n_layers: Optional[int] = None,
     dtype: Optional[torch.dtype] = None,
-) -> list[LayerCache]:
+) -> List[LayerCache]:
     """
     Allocate a cache to be used with the Transformer module.
 
@@ -447,7 +452,7 @@ def make_cache(
     ]
 
 
-def cache_prefix(cache: list[LayerCache], length: int) -> list[LayerCache]:
+def cache_prefix(cache: List[LayerCache], length: int) -> List[LayerCache]:
     """
     Take a prefix view of a larger cache.
 
