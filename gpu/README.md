@@ -57,7 +57,7 @@ apt install software-properties-common
 docker run --cap-add SYS_ADMIN --privileged -it -v ./:/work -v /home/yogiwara/docker-cache:/root/.cache  -d --net=host   --gpus all --name ogi2 nvidia/cuda:12.2.0-devel-ubuntu22.04 bash
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
 
-
+export HF_ALLOW_CODE_EVAL="1"
  python run_eval.py --ckpt_dir ./checkpoints --tasks humaneval --prompt_length 2048 --batch_size 16 --device cuda:4
 ```
 

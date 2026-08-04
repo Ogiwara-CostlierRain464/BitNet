@@ -16,6 +16,7 @@ from typing import (
 
 import tiktoken
 from tiktoken.load import load_tiktoken_bpe
+from transformers import BatchEncoding
 
 
 logger = getLogger(__name__)
@@ -155,6 +156,35 @@ class Tokenizer:
         if eos:
             t.append(self.eos_id)
         return t
+
+    def __call__(self, text, return_tensors=None, add_special_tokens=False):
+        if isinstance(text, str):
+            text = [text]
+
+        input_ids = [self.encode(x, bos=add_special_tokens, eos=False) for x in text]
+
+        if return_tensors == "pt":
+            import torch
+
+            max_len = max(len(x) for x in input_ids)
+
+            padded = [
+                ids + [self.pad_id] * (max_len - len(ids))
+                for ids in input_ids
+            ]
+
+            attention_mask = [
+                [1] * len(ids) + [0] * (max_len - len(ids))
+                for ids in input_ids
+            ]
+
+            return BatchEncoding({
+                "input_ids": torch.tensor(padded),
+                "attention_mask": torch.tensor(attention_mask),
+            })
+
+        return BatchEncoding({"input_ids": input_ids})
+
 
     def decode(self, t: Sequence[int]) -> str:
         """

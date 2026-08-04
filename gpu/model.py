@@ -340,15 +340,43 @@ class TransformerBlock(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        cache: LayerCache,
-        attn_bias: AttnBias,
+        cache: Optional[LayerCache] = None,
+        attn_bias: Optional[AttnBias] = None,
+        attention_mask = None,  # DSnoT 互換性用のダミー引数
+        position_ids = None,    # DSnoT 互換性用のダミー引数
+        **kwargs # prune.py が強制的に渡してくるダミー引数を吸収
     ) -> torch.Tensor:
+        # --- DSnoTが直接 layer() を呼び出したときの欠落対策 ---
+        # 引数として渡されなかった場合は、Transformer側で事前に配られたものを使う
+        if cache is None:
+            cache = getattr(self, "_cached_cache", None)
+
+        if attn_bias is None:
+            attn_bias = getattr(self, "_cached_attn_bias", None)
+        # ------------------------------------------------------
+
+        # --- DSnoT次元ズレ対策 ---
+        # DSnoTが inps[j].unsqueeze(0) で (1, seq_len, hidden_size) の3次元で渡してきた場合、
+        # BitNetの内部想定である (seq_len, hidden_size) の2次元に変換する
+        is_unsqueezed = False
+        if x.dim() == 3 and x.size(0) == 1:
+            x = x.squeeze(0)
+            is_unsqueezed = True
+        # -------------------------
+
         h = x + self.attention.forward(
             self.attention_norm(x),
             cache,
             attn_bias,
         )
         out = h + self.feed_forward(self.ffn_norm(h))
+
+        # --- DSnoTへ返す前に次元を戻す ---
+        # DSnoTは戻り値が3次元であることを期待しているため、元に戻してから返す
+        if is_unsqueezed:
+            out = out.unsqueeze(0)
+        # ---------------------------------
+
         return out
 
 
@@ -381,10 +409,24 @@ class Transformer(nn.Module):
         attn_bias: AttnBias,
         cache: List[LayerCache],
     ) -> torch.Tensor:
+
+        # --- DSnoT対策: Catcherがエラーで処理を中断する【前】に、全レイヤーに引数を保存しておく ---
+        for i, layer in enumerate(self.layers):
+            # layerがCatcherでラップされている場合は .module の方に保存する
+            target_layer = layer.module if hasattr(layer, "module") else layer
+            target_layer._cached_cache = cache[i]
+            target_layer._cached_attn_bias = attn_bias
+        # ---------------------------------------------------------------------------------
+
         h = self.tok_embeddings(token_values)
 
         for i, layer in enumerate(self.layers):
-            h = layer(h, cache[i], attn_bias)
+            h = layer(h,
+             cache=cache[i],
+             attn_bias=attn_bias,
+             attention_mask=None,
+             position_ids=None
+             )
 
         logits = self.output(self.norm(h))
         return logits.float()
