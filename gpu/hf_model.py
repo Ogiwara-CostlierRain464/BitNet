@@ -346,7 +346,6 @@ class Transformer(nn.Module):
 
 
 class BitnetForCausalLM(nn.Module):
-    _tied_weights_keys = ["lm_head.weight"]
 
     def __init__(self, args: Union[ModelArgs, any]):
         super().__init__()
@@ -377,7 +376,6 @@ class BitnetForCausalLM(nn.Module):
         self.config = args
         self.model = Transformer(args)
         self.vocab_size = args.vocab_size
-        self.lm_head = self.model.output
 
     def get_input_embeddings(self):
         return self.model.tok_embeddings
@@ -386,10 +384,9 @@ class BitnetForCausalLM(nn.Module):
         self.model.tok_embeddings = value
 
     def get_output_embeddings(self):
-        return self.lm_head
+        return self.model.output
 
     def set_output_embeddings(self, new_embeddings):
-        self.lm_head = new_embeddings
         self.model.output = new_embeddings
 
     def set_decoder(self, decoder):
@@ -473,13 +470,35 @@ def make_cache(
     n_layers: Optional[int] = None,
     dtype: Optional[torch.dtype] = None,
 ) -> List[LayerCache]:
+    """
+    Allocate a cache to be used with the Transformer module.
+
+    Args:
+        args (ModelArgs): the model configuration.
+        length (int): per layer cache size.
+            It is usually budgeted as ``max_batch * max_seq``
+        device (torch.device, optional): the device on which
+            the cache should be allocated.
+        n_layers (int, optional): the number of layers to
+            allocate a cache for (defaults to the model
+            settings).
+        dtype (torch.dtype, optional): the dtype to use for
+            cache entries (defaults to the default dtype).
+
+    Returns:
+        The cache object to pass to ``Tranformer.forward``.
+    """
+
     head_dim = args.dim // args.n_heads
-    n_kv_heads = args.n_kv_heads if args.n_kv_heads is not None else args.n_heads
+    n_kv_heads = args.n_kv_heads
+    if n_kv_heads is None:
+        n_kv_heads = args.n_heads
+    n_local_kv_heads = n_kv_heads
 
     if n_layers is None:
         n_layers = args.n_layers
 
-    shape = (1, length, n_kv_heads, 1, head_dim)
+    shape = (1, length, n_local_kv_heads, 1, head_dim)
     heads_per_group = args.n_heads // n_kv_heads
     expansion = (-1, -1, -1, heads_per_group, -1)
     return [
@@ -489,6 +508,7 @@ def make_cache(
         )
         for _ in range(n_layers)
     ]
+
 
 
 def cache_prefix(cache: List[LayerCache], length: int) -> List[LayerCache]:
@@ -542,7 +562,7 @@ def load_bitnet_from_fp16(
 
     # 5. 重みのロード
     missing_keys, unexpected_keys = model.load_state_dict(
-        new_state_dict, strict=False
+        new_state_dict, strict=True
     )
 
     if missing_keys:
@@ -557,29 +577,29 @@ def load_bitnet_from_fp16(
     return model
 
 
-def generate_response(
-    model,
-    tokenizer,
-    prompt: str,
-    max_new_tokens: int = 256,
-    device: str = "cuda",
-) -> str:
-    input_ids = tokenizer.encode(prompt, return_tensors="pt").to(device)
-
-    # Hugging Face 標準の generate を利用
-    with torch.no_grad():
-        output_ids = model.generate(
-            input_ids=input_ids,
-            max_new_tokens=max_new_tokens,
-            do_sample=True,
-            temperature=0.7,
-            top_p=0.9,
-            pad_token_id=tokenizer.eos_token_id,
-        )
-
-    # 生成された新規トークン部分のみをデコード
-    new_tokens = output_ids[0][input_ids.shape[1] :]
-    return tokenizer.decode(new_tokens, skip_special_tokens=True)
+# def generate_response(
+#     model,
+#     tokenizer,
+#     prompt: str,
+#     max_new_tokens: int = 256,
+#     device: str = "cuda",
+# ) -> str:
+#     input_ids = tokenizer.encode(prompt, return_tensors="pt").to(device)
+#
+#     # Hugging Face 標準の generate を利用
+#     with torch.no_grad():
+#         output_ids = model.generate(
+#             input_ids=input_ids,
+#             max_new_tokens=max_new_tokens,
+#             do_sample=True,
+#             temperature=0.7,
+#             top_p=0.9,
+#             pad_token_id=tokenizer.eos_token_id,
+#         )
+#
+#     # 生成された新規トークン部分のみをデコード
+#     new_tokens = output_ids[0][input_ids.shape[1] :]
+#     return tokenizer.decode(new_tokens, skip_special_tokens=True)
 
 
 def chat(
@@ -644,8 +664,115 @@ def chat(
             break
 
 
-if __name__ == "__main__":
-    # モデル設定情報
+# ==========================================
+# トークンサンプリング用関数
+# ==========================================
+def sample_next_token(logits: torch.Tensor, temperature: float = 0.7, top_p: float = 0.9) -> int:
+    if temperature <= 0.0:
+        return torch.argmax(logits, dim=-1).item()
+
+    probs = torch.softmax(logits / temperature, dim=-1)
+    sorted_probs, sorted_indices = torch.sort(probs, descending=True)
+    cumulative_probs = torch.cumsum(sorted_probs, dim=-1)
+
+    sorted_indices_to_remove = cumulative_probs > top_p
+    sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
+    sorted_indices_to_remove[..., 0] = 0
+
+    indices_to_remove = sorted_indices[sorted_indices_to_remove]
+    probs[indices_to_remove] = 0.0
+    probs = probs / probs.sum()
+
+    next_token = torch.multinomial(probs, num_samples=1)
+    return next_token.item()
+
+
+# ==========================================
+# model.generate を使わない自前生成ループ
+# ==========================================
+@torch.inference_mode()
+def generate_custom(
+    model: BitnetForCausalLM,
+    prompt_tokens: List[int],
+    stop_tokens: set,
+    max_new_tokens: int = 512,
+    max_seq_len: int = 2048,
+    temperature: float = 0.7,
+    top_p: float = 0.9,
+    device: str = "cuda",
+) -> List[int]:
+    prompt_len = len(prompt_tokens)
+
+    # 1. KVキャッシュ領域の事前割り当て
+    cache = make_cache(
+        args=model.model.args,
+        length=max_seq_len,
+        device=device,
+        dtype=model.model.tok_embeddings.weight.dtype,
+    )
+
+    # --------------------------------------------------
+    # 2. Prefill フェーズ (プロンプトを一括処理してKVキャッシュを初期化)
+    # --------------------------------------------------
+    tokens_tensor = torch.tensor([prompt_tokens], device=device, dtype=torch.long)
+    token_lengths = torch.tensor([prompt_len], device=device, dtype=torch.int32)
+    start_pos = torch.tensor([0], device=device, dtype=torch.int32)
+
+    outputs = model(
+        token_values=tokens_tensor,
+        token_lengths=token_lengths,
+        start_pos=start_pos,
+        cache=cache,
+        kv_padding=max_seq_len,
+        return_dict=True,
+    )
+    logits = outputs.logits
+
+    # 最後のトークンの logits から最初の生成トークンをサンプリング
+    last_logits = logits[0, -1, :]
+    next_token = sample_next_token(last_logits, temperature=temperature, top_p=top_p)
+
+    generated_tokens = []
+    cur_pos = prompt_len
+
+    # --------------------------------------------------
+    # 3. Decode フェーズ (1トークンずつKVキャッシュに追記して自動生成)
+    # --------------------------------------------------
+    for _ in range(max_new_tokens):
+        if next_token in stop_tokens or cur_pos >= max_seq_len - 1:
+            break
+
+        generated_tokens.append(next_token)
+
+        # 1トークンのみ入力
+        next_input = torch.tensor([[next_token]], device=device, dtype=torch.long)
+        token_lengths = torch.tensor([1], device=device, dtype=torch.int32)
+        start_pos = torch.tensor([cur_pos], device=device, dtype=torch.int32)
+
+        outputs = model(
+            token_values=next_input,
+            token_lengths=token_lengths,
+            start_pos=start_pos,
+            cache=cache,
+            kv_padding=max_seq_len,
+            return_dict=True
+        )
+        logits = outputs.logits
+
+        last_logits = logits[0, -1, :]
+        next_token = sample_next_token(last_logits, temperature=temperature, top_p=top_p)
+        cur_pos += 1
+
+    return generated_tokens
+
+
+# ==========================================
+# 対話実行メインループ
+# ==========================================
+def main():
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    # 1. モデル構成とロード
     args = ModelArgs(
         dim=2560,
         n_layers=30,
@@ -653,27 +780,64 @@ if __name__ == "__main__":
         n_kv_heads=5,
         vocab_size=128256,
         ffn_dim=6912,
-        use_kernel=False,  # FP16からのロード時はカーネル指定をFalseまたは元設定に合わせます
+        use_kernel=False,
     )
 
-    # ロードの実行
-    device = "cuda" if torch.cuda.is_available() else "cpu"
     model = load_bitnet_from_fp16(
         checkpoint_path="./checkpoints/model_state_fp16.pt",
         args=args,
         device=device,
-        dtype=torch.bfloat16,
+        dtype=torch.bfloat16
     )
 
-    print("モデルのロードが完了しました。")
 
-    tokenizer = Tokenizer("./tokenizer.model")
+    # 2. Tokenizer & ChatFormat 初期化
+    tokenizer_path = "./tokenizer.model"
+    tokenizer = Tokenizer(model_path=tokenizer_path)
     chat_formatter = ChatFormat(tokenizer=tokenizer)
-    chat(model, tokenizer, chat_formatter, device=device)
+
+    dialog: List[Message] = [
+        {"role": "system", "content": "You are a helpful AI assistant."}
+    ]
+
+    print("\n[Low-Level Engine] モデルの準備が完了しました ('exit' で終了)\n" + "-" * 50)
+
+    # 3. インタラクティブ対話ループ
+    while True:
+        try:
+            user_input = input("\nUser > ")
+            if user_input.strip().lower() in ["exit", "quit"]:
+                print("終了します。")
+                break
+            if not user_input.strip():
+                continue
+
+            dialog.append({"role": "user", "content": user_input})
+            #prompt_tokens = chat_formatter.encode_dialog_prompt(dialog, completion=True)
+            prompt_tokens = tokenizer.encode(user_input, bos=False, eos=False)
+
+            # 自前生成エンジンの呼び出し
+            generated_tokens = generate_custom(
+                model=model,
+                prompt_tokens=prompt_tokens,
+                stop_tokens=tokenizer.stop_tokens,
+                max_new_tokens=512,
+                max_seq_len=2048,
+                temperature=0.7,
+                top_p=0.9,
+                device=device,
+            )
+
+            #response_text = chat_formatter.decode(generated_tokens).strip()
+            response_text = tokenizer.decode(generated_tokens).strip()
+            print(f"Assistant > {response_text}")
+
+            dialog.append({"role": "assistant", "content": response_text})
+
+        except KeyboardInterrupt:
+            print("\n終了します。")
+            break
 
 
-    # テスト推論（動作確認）
-#     input_ids = torch.tensor([[1, 1504, 230]], device=device)
-#     with torch.no_grad():
-#         output = model(input_ids=input_ids, kv_padding = input_ids.shape[1])
-#         print(f"Logits shape: {output.logits.shape}")
+if __name__ == "__main__":
+    main()
