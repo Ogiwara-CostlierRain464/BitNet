@@ -222,8 +222,8 @@ class FastGen:
 
     @torch.inference_mode()
     def generate_all(
-            self, prompts: list[list[int]], use_cuda_graphs: bool, use_sampling: bool
-    ) -> Tuple[Stats, list[list[int]]]:
+            self, prompts: List[List[int]], use_cuda_graphs: bool, use_sampling: bool
+    ) -> Tuple[Stats, List[List[int]]]:
         bs = len(prompts)
         prompt_lens = [len(p) for p in prompts]
         padded_prompt_lens = [self.gen_args.prompt_length] * bs
@@ -311,19 +311,12 @@ class FastGen:
         return stats, answers
 
 class FastGenWrapper(LM):
-    def __init__(self, ckpt_dir: str, batch_size: int = 1, prompt_length: int = 1024, gen_length: int = 256, device: str = "cuda:0"):
+    def __init__(self, model, gen_args, batch_size: int = 1, device: str = "cuda:0"):
         super().__init__()
+        self.model = model
+        self.gen_args = gen_args
         self._batch_size = batch_size
         self._device = device
-
-        # モデルの初期化
-        self.gen_args = GenArgs(
-            gen_bsz=self._batch_size,
-            prompt_length=prompt_length,
-            gen_length=gen_length,
-            use_sampling=False # 評価時はGreedyで固定
-        )
-        self.model = FastGen.build(ckpt_dir, self.gen_args, self._device)
 
     def generate_until(self, requests: List[Instance]) -> List[str]:
         results = []
@@ -405,13 +398,19 @@ if __name__ == "__main__":
     parser.add_argument("--device", type=str, default="cuda:0", help="使用するデバイス (例: cuda:0, cuda:1)")
     args = parser.parse_args()
 
+    gen_args = GenArgs(
+       gen_bsz=args.batch_size,
+       prompt_length=args.prompt_length,
+       gen_length=args.gen_length,
+       use_sampling=False # 評価時はGreedyで固定
+    )
+    model = FastGen.build(args.ckpt_dir, gen_args, args.device)
     # ラッパー経由でモデルをセットアップ
     model_wrapper = FastGenWrapper(
-        ckpt_dir=args.ckpt_dir,
+        model = model,
+        gen_args = gen_args,
         batch_size=args.batch_size,
-        prompt_length=args.prompt_length,
-        gen_length=args.gen_length,
-        device=args.device
+        device=args.device,
     )
 
     print(f"--- 評価を開始します: タスク={args.tasks} ---")

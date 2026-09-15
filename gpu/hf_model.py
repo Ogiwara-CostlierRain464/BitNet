@@ -18,15 +18,8 @@ from xformers.ops.fmha.attn_bias import (
 import ctypes
 from pathlib import Path
 
-try:
-    from transformers.modeling_outputs import CausalLMOutputWithPast
-except ImportError:
-    @dataclass
-    class CausalLMOutputWithPast:
-        logits: torch.Tensor = None
-        past_key_values: Optional[Tuple[Tuple[torch.Tensor]]] = None
-        hidden_states: Optional[Tuple[torch.Tensor]] = None
-        attentions: Optional[Tuple[torch.Tensor]] = None
+from transformers import PretrainedConfig, PreTrainedModel
+from transformers.modeling_outputs import CausalLMOutputWithPast
 
 _this_dir = Path(__file__).resolve().parent
 lib_path = _this_dir / "bitnet_kernels" / "libbitnet.so"
@@ -49,6 +42,48 @@ class ModelArgs:
     use_kernel: bool = False
     use_sptmm: bool = False
     sparsity: int = 40 # 40 or 60 or 80
+
+
+class BitNetConfig(PretrainedConfig):
+    model_type = "bitnet"
+
+    def __init__(
+        self,
+        dim: int = 2560,
+        n_layers: int = 30,
+        n_heads: int = 20,
+        n_kv_heads: int = 5,
+        vocab_size: int = 128256,
+        ffn_dim: int = 6912,
+        norm_eps: float = 1e-5,
+        rope_theta: float = 500000.0,
+        use_kernel: bool = False,
+        use_sptmm: bool = False,
+        sparsity: int = 40,
+        max_seq_len: int = 2048,
+        use_cache: bool = False,
+        **kwargs,
+    ):
+        self.dim = dim
+        self.hidden_size = dim
+        self.n_layers = n_layers
+        self.num_hidden_layers = n_layers
+        self.n_heads = n_heads
+        self.num_attention_heads = n_heads
+        self.n_kv_heads = n_kv_heads
+        self.num_key_value_heads = n_kv_heads
+        self.vocab_size = vocab_size
+        self.ffn_dim = ffn_dim
+        self.intermediate_size = ffn_dim
+        self.norm_eps = norm_eps
+        self.rms_norm_eps = norm_eps
+        self.rope_theta = rope_theta
+        self.use_kernel = use_kernel
+        self.use_sptmm = use_sptmm
+        self.sparsity = sparsity
+        self.max_seq_len = max_seq_len
+        self.use_cache = use_cache
+        super().__init__(**kwargs)
 
 
 LayerCache = Tuple[torch.Tensor, torch.Tensor]
