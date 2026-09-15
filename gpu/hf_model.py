@@ -29,21 +29,6 @@ bitnet_lib = ctypes.CDLL(str(lib_path))
 from tokenizer import Tokenizer, ChatFormat
 
 
-@dataclass
-class ModelArgs:
-    dim: int = 2560
-    n_layers: int = 30
-    n_heads: int = 20
-    n_kv_heads: int = 5
-    vocab_size: int = 128256
-    ffn_dim: int = 6912
-    norm_eps: float = 1e-5
-    rope_theta: float = 500000.0
-    use_kernel: bool = False
-    use_sptmm: bool = False
-    sparsity: int = 40 # 40 or 60 or 80
-
-
 class BitNetConfig(PretrainedConfig):
     model_type = "bitnet"
 
@@ -57,32 +42,30 @@ class BitNetConfig(PretrainedConfig):
         ffn_dim: int = 6912,
         norm_eps: float = 1e-5,
         rope_theta: float = 500000.0,
-        use_kernel: bool = False,
-        use_sptmm: bool = False,
-        sparsity: int = 40,
         max_seq_len: int = 2048,
         use_cache: bool = False,
         **kwargs,
     ):
+        # BitNet specific
         self.dim = dim
-        self.hidden_size = dim
         self.n_layers = n_layers
-        self.num_hidden_layers = n_layers
         self.n_heads = n_heads
-        self.num_attention_heads = n_heads
         self.n_kv_heads = n_kv_heads
-        self.num_key_value_heads = n_kv_heads
         self.vocab_size = vocab_size
         self.ffn_dim = ffn_dim
-        self.intermediate_size = ffn_dim
         self.norm_eps = norm_eps
-        self.rms_norm_eps = norm_eps
         self.rope_theta = rope_theta
-        self.use_kernel = use_kernel
-        self.use_sptmm = use_sptmm
-        self.sparsity = sparsity
         self.max_seq_len = max_seq_len
         self.use_cache = use_cache
+
+        # Hugging Face compatibility
+        self.hidden_size = dim
+        self.num_hidden_layers = n_layers
+        self.num_attention_heads = n_heads
+        self.num_key_value_heads = n_kv_heads
+        self.intermediate_size = ffn_dim
+        self.rms_norm_eps = norm_eps
+
         super().__init__(**kwargs)
 
 
@@ -216,36 +199,36 @@ class FeedForward(nn.Module):
 
 
 class TransformerBlock(nn.Module):
-    def __init__(self, args: ModelArgs):
+    def __init__(self, config: BitNetConfig):
         super().__init__()
 
-        assert args.dim % args.n_heads == 0
-        head_dim = args.dim // args.n_heads
-        n_kv_heads = args.n_kv_heads if args.n_kv_heads is not None else args.n_heads
+        assert config.dim % config.n_heads == 0
+        head_dim = config.dim // config.n_heads
+        n_kv_heads = config.n_kv_heads if config.n_kv_heads is not None else config.n_heads
 
-        assert args.n_heads % n_kv_heads == 0
+        assert config.n_heads % n_kv_heads == 0
 
         self.attention = Attention(
-            dim=args.dim,
+            dim=config.dim,
             head_dim=head_dim,
-            n_heads=args.n_heads,
+            n_heads=config.n_heads,
             n_kv_heads=n_kv_heads,
-            rope_theta=args.rope_theta,
-            norm_eps=args.norm_eps,
-            use_kernel=args.use_kernel,
-            use_sptmm=args.use_sptmm,
-            sparsity=args.sparsity
+            rope_theta=config.rope_theta,
+            norm_eps=config.norm_eps,
+            use_kernel=False,
+            use_sptmm=False,
+            sparsity=40,
         )
         self.feed_forward = FeedForward(
-            dim=args.dim,
-            hidden_dim=args.ffn_dim,
-            norm_eps=args.norm_eps,
-            use_kernel=args.use_kernel,
-            use_sptmm=args.use_sptmm,
-            sparsity=args.sparsity
+            dim=config.dim,
+            hidden_dim=config.ffn_dim,
+            norm_eps=config.norm_eps,
+            use_kernel=False,
+            use_sptmm=False,
+            sparsity=40,
         )
-        self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
-        self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
+        self.attention_norm = RMSNorm(config.dim, eps=config.norm_eps)
+        self.ffn_norm = RMSNorm(config.dim, eps=config.norm_eps)
 
     def forward(
         self,
@@ -279,19 +262,21 @@ class TransformerBlock(nn.Module):
 
 
 class Transformer(nn.Module):
-    def __init__(self, args: ModelArgs):
+    def __init__(self, config: BitNetConfig):
         super().__init__()
-        assert args.vocab_size > 0
-        self.args = args
+        assert config.vocab_size > 0
+        self.config = config
 
         self.tok_embeddings = nn.Embedding(
-            num_embeddings=args.vocab_size,
-            embedding_dim=args.dim,
+            num_embeddings=config.vocab_size,
+            embedding_dim=config.dim,
         )
 
-        self.layers = nn.ModuleList([TransformerBlock(args) for _ in range(args.n_layers)])
-        self.norm = RMSNorm(args.dim, eps=args.norm_eps)
-        self.output = nn.Linear(args.dim, args.vocab_size, bias=False)
+        self.layers = nn.ModuleList(
+            [TransformerBlock(config) for _ in range(config.n_layers)]
+        )
+        self.norm = RMSNorm(config.dim, eps=config.norm_eps)
+        self.output = nn.Linear(config.dim, config.vocab_size, bias=False)
 
     @property
     def embed_tokens(self):
@@ -366,7 +351,7 @@ class Transformer(nn.Module):
         if cache is None:
             total_len = int((start_pos + token_lengths).max().item())
             cache = make_cache(
-                self.args,
+                self.config,
                 length=max(total_len, 1),
                 device=device,
                 dtype=self.tok_embeddings.weight.dtype,
@@ -380,37 +365,14 @@ class Transformer(nn.Module):
         return self.forward_with_attn_bias(token_values, attn_bias, cache)
 
 
-class BitnetForCausalLM(nn.Module):
+class BitnetForCausalLM(PreTrainedModel):
+    config_class = BitNetConfig
 
-    def __init__(self, args: Union[ModelArgs, any]):
-        super().__init__()
-        if not isinstance(args, ModelArgs):
-            if hasattr(args, "to_dict"):
-                cfg = args.to_dict()
-            elif isinstance(args, dict):
-                cfg = args
-            else:
-                cfg = getattr(args, "__dict__", {})
-
-            model_args = ModelArgs(
-                dim=cfg.get("dim", cfg.get("hidden_size", 2560)),
-                n_layers=cfg.get("n_layers", cfg.get("num_hidden_layers", 30)),
-                n_heads=cfg.get("n_heads", cfg.get("num_attention_heads", 20)),
-                n_kv_heads=cfg.get("n_kv_heads", cfg.get("num_key_value_heads", 5)),
-                vocab_size=cfg.get("vocab_size", 128256),
-                ffn_dim=cfg.get("ffn_dim", cfg.get("intermediate_size", 6912)),
-                norm_eps=cfg.get("norm_eps", cfg.get("rms_norm_eps", 1e-5)),
-                rope_theta=cfg.get("rope_theta", 500000.0),
-                use_kernel=cfg.get("use_kernel", False),
-                use_sptmm=cfg.get("use_sptmm", False),
-                sparsity=cfg.get("sparsity", 40),
-            )
-            args = model_args
-
-        self.args = args
-        self.config = args
-        self.model = Transformer(args)
-        self.vocab_size = args.vocab_size
+    def __init__(self, config: BitNetConfig):
+        super().__init__(config)
+        self.config = config
+        self.model = Transformer(config)
+        self.vocab_size = config.vocab_size
 
     def get_input_embeddings(self):
         return self.model.tok_embeddings
@@ -429,6 +391,20 @@ class BitnetForCausalLM(nn.Module):
 
     def get_decoder(self):
         return self.model
+
+    @property
+    def hf_device_map(self):
+        if getattr(self, "_hf_device_map", None) is not None:
+            return self._hf_device_map
+        return {"": self.device}
+
+    @hf_device_map.setter
+    def hf_device_map(self, value):
+        self._hf_device_map = value
+
+    @property
+    def seqlen(self) -> int:
+        return getattr(self.config, "max_seq_len", 2048)
 
     @torch.no_grad()
     def forward(
@@ -455,7 +431,7 @@ class BitnetForCausalLM(nn.Module):
         return_dict = (
             return_dict
             if return_dict is not None
-            else getattr(self.args, "use_return_dict", True)
+            else getattr(self.config, "use_return_dict", True)
         )
 
         if cache is None and past_key_values is not None:
@@ -499,42 +475,21 @@ class BitnetForCausalLM(nn.Module):
 
 
 def make_cache(
-    args: ModelArgs,
+    config: BitNetConfig,
     length: int,
     device: Optional[Union[str, torch.device]] = None,
     n_layers: Optional[int] = None,
     dtype: Optional[torch.dtype] = None,
 ) -> List[LayerCache]:
-    """
-    Allocate a cache to be used with the Transformer module.
-
-    Args:
-        args (ModelArgs): the model configuration.
-        length (int): per layer cache size.
-            It is usually budgeted as ``max_batch * max_seq``
-        device (torch.device, optional): the device on which
-            the cache should be allocated.
-        n_layers (int, optional): the number of layers to
-            allocate a cache for (defaults to the model
-            settings).
-        dtype (torch.dtype, optional): the dtype to use for
-            cache entries (defaults to the default dtype).
-
-    Returns:
-        The cache object to pass to ``Tranformer.forward``.
-    """
-
-    head_dim = args.dim // args.n_heads
-    n_kv_heads = args.n_kv_heads
-    if n_kv_heads is None:
-        n_kv_heads = args.n_heads
+    head_dim = config.dim // config.n_heads
+    n_kv_heads = config.n_kv_heads if config.n_kv_heads is not None else config.n_heads
     n_local_kv_heads = n_kv_heads
 
     if n_layers is None:
-        n_layers = args.n_layers
+        n_layers = config.n_layers
 
     shape = (1, length, n_local_kv_heads, 1, head_dim)
-    heads_per_group = args.n_heads // n_kv_heads
+    heads_per_group = config.n_heads // n_kv_heads
     expansion = (-1, -1, -1, heads_per_group, -1)
     return [
         (
@@ -555,16 +510,15 @@ def cache_prefix(cache: List[LayerCache], length: int) -> List[LayerCache]:
 
 def load_bitnet_from_fp16(
     checkpoint_path: str = "./checkpoints/model_state_fp16.pt",
-    args: ModelArgs = None,
+    config: Optional[BitNetConfig] = None,
     device: str = "cuda",
     dtype: torch.dtype = torch.bfloat16,
 ) -> BitnetForCausalLM:
-    # 1. ModelArgsの準備（未指定の場合はデフォルトパラメータを使用）
-    if args is None:
-        args = ModelArgs()
+    if config is None:
+        config = BitNetConfig()
 
     # 2. モデルのインスタンス化
-    model = BitnetForCausalLM(args)
+    model = BitnetForCausalLM(config)
 
     # 3. チェックポイントの読み込み (CPU上に展開)
     checkpoint = torch.load(checkpoint_path, map_location="cpu")
@@ -740,7 +694,7 @@ def generate_custom(
 
     # 1. KVキャッシュ領域の事前割り当て
     cache = make_cache(
-        args=model.model.args,
+        config=model.model.config,
         length=max_seq_len,
         device=device,
         dtype=model.model.tok_embeddings.weight.dtype,
@@ -808,7 +762,7 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # 1. モデル構成とロード
-    args = ModelArgs(
+    config = BitNetConfig(
         dim=2560,
         n_layers=30,
         n_heads=20,
@@ -820,7 +774,7 @@ def main():
 
     model = load_bitnet_from_fp16(
         checkpoint_path="./checkpoints/model_state_fp16.pt",
-        args=args,
+        config=config,
         device=device,
         dtype=torch.bfloat16
     )
