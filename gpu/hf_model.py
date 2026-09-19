@@ -238,11 +238,36 @@ class TransformerBlock(nn.Module):
         x: torch.Tensor,
         cache: LayerCache,
         attn_bias: AttnBias,
+        attention_mask=None,   # HF 系ツール互換: None のみ許容
+        position_ids=None,     # 同上
+        **kwargs,
     ) -> torch.Tensor:
         # [FIX] _cached_cache / _cached_attn_bias によるモジュール属性経由の受け渡しを削除。
         # 呼び出し側が必ず明示的に渡すので、暗黙の状態を持たせない。
         if cache is None or attn_bias is None:
             raise ValueError("TransformerBlock.forward には cache と attn_bias が必須です")
+
+        # [FIX] HF 系のツール (pruning / 量子化 / 解析) は LLaMA の規約で
+        # attention_mask や position_ids を渡してくる。この実装では
+        #   - パディングはパック時に物理的に除去済み
+        #   - 系列長と因果性は attn_bias が保持
+        #   - 位置は rope_padded が attn_bias の seqlen から導出
+        # なので渡されても使いようがない。黙って無視すると結果が静かに狂うので落とす。
+        if attention_mask is not None:
+            raise ValueError(
+                "TransformerBlock は attention_mask を受け取れません。"
+                "パディングはパック時に除去され、系列長と因果性は attn_bias が保持しています。"
+                " 呼び出し側を attn_bias ベースに直してください。"
+            )
+        if position_ids is not None:
+            raise ValueError(
+                "TransformerBlock は position_ids を受け取れません。"
+                "位置は rope_padded が attn_bias の seqlen から導出します。"
+            )
+        if kwargs:
+            raise ValueError(
+                f"TransformerBlock: 未対応の引数です: {sorted(kwargs)}"
+            )
 
         # 内部表現は packed な 2D (total_tokens, dim)。3D で来た場合だけ一時的に潰す。
         squeezed = False
@@ -512,19 +537,22 @@ class BitnetForCausalLM(PreTrainedModel):
         start_pos:      (B,) すでにキャッシュ済みのトークン数
         num_logits_to_keep: 0=全位置の logits を返す / 1=各系列の最終位置のみ (B,1,V)
         """
-        # [FIX] 未知の引数を黙殺せず知らせる（同種の事故の再発防止）
-        unexpected = set(kwargs) - _IGNORED_FORWARD_KWARGS
-        if unexpected:
-            warnings.warn(
-                f"BitnetForCausalLM.forward: 未対応の引数を無視しました: {sorted(unexpected)}"
-            )
+        # 実際に使う引数を先に kwargs から取り出す（pop で「消費済み」にする）
         if "logits_to_keep" in kwargs:  # 新しい transformers での名称
-            num_logits_to_keep = int(kwargs["logits_to_keep"])
+            num_logits_to_keep = int(kwargs.pop("logits_to_keep"))
 
         if input_ids is None and token_values is not None:
             input_ids = token_values
         elif input_ids is None and "input_0" in kwargs:
             input_ids = kwargs.pop("input_0")
+
+        # [FIX] 未知の引数を黙殺せず知らせる（同種の事故の再発防止）。
+        # 上の pop 済みキーは残っていないので、ここに来るのは本当に未対応のものだけ。
+        unexpected = set(kwargs) - _IGNORED_FORWARD_KWARGS
+        if unexpected:
+            warnings.warn(
+                f"BitnetForCausalLM.forward: 未対応の引数を無視しました: {sorted(unexpected)}"
+            )
 
         if input_ids is None:
             raise ValueError("You must specify input_ids or token_values")
