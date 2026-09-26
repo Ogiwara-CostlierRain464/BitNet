@@ -864,7 +864,14 @@ def generate_custom(
     top_p: float = 0.9,
     device: str = "cuda",
     cache: Optional[List[LayerCache]] = None,
+    stop_strings: Optional[List[str]] = None,
+    tokenizer=None,
+    stop_check_every: int = 8,
 ) -> List[int]:
+    """
+    stop_strings: 文字列で生成を打ち切る（lm-eval の `until` 用）。tokenizer も必要。
+                  stop_check_every トークンごとにデコードして判定する。
+    """
     prompt_len = len(prompt_tokens)
     if prompt_len == 0:
         return []
@@ -915,6 +922,16 @@ def generate_custom(
             break
 
         generated_tokens.append(next_token)
+
+        # 文字列ベースの停止条件（lm-eval の until）。毎トークン decode すると重いので間引く。
+        if (
+            stop_strings
+            and tokenizer is not None
+            and len(generated_tokens) % stop_check_every == 0
+        ):
+            partial = tokenizer.decode(generated_tokens)
+            if any(s and s in partial for s in stop_strings):
+                break
 
         next_input = torch.tensor([[next_token]], device=device, dtype=torch.long)
         start_pos = torch.tensor([cur_pos], device=device, dtype=torch.int32)
