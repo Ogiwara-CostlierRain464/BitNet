@@ -315,8 +315,13 @@ class Transformer(nn.Module):
         token_values: torch.Tensor,
         attn_bias: AttnBias,
         cache: List[LayerCache],
+        last_indices: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        """packed な 1D トークン列を受け取り、packed な 2D logits (total_tokens, vocab) を返す。"""
+        """
+        packed な 1D トークン列を受け取り、packed な 2D logits (total_tokens, vocab) を返す。
+        last_indices を渡すと、その位置だけ lm_head を通す (生成時に使う)。
+        vocab=128k なので、prefill で全位置の logits を作ると fp32 で数百MB になる。
+        """
         if token_values.dim() != 1:
             token_values = token_values.reshape(-1)
 
@@ -325,8 +330,44 @@ class Transformer(nn.Module):
         for i, layer in enumerate(self.layers):
             h = layer(h, cache=cache[i], attn_bias=attn_bias)
 
-        logits = self.output(self.norm(h))
+        h = self.norm(h)
+        if last_indices is not None:
+            h = h[last_indices]
+        logits = self.output(h)
         return logits.float()
+
+    @torch.no_grad()
+    def forward_packed(
+        self,
+        token_values: torch.Tensor,
+        q_seqlen: List[int],
+        kv_seqlen: List[int],
+        cache: List[LayerCache],
+        kv_padding: int,
+        last_only: bool = False,
+    ) -> torch.Tensor:
+        """
+        検証と GPU→CPU 同期を省いた高速パス（生成ループ用）。
+
+        q_seqlen / kv_seqlen は Python の int リストで渡すこと。
+        forward() は token_lengths / start_pos を GPU テンソルで受け取るため、
+        AttnBias を作るたびに .item() / .tolist() でホスト同期が発生し、
+        1トークンあたり5〜6回の同期になって生成が極端に遅くなる。
+        """
+        attn_bias = AttnBias.from_seqlens(
+            q_seqlen=q_seqlen,
+            kv_seqlen=kv_seqlen,
+            kv_padding=kv_padding,
+        )
+        last_indices = None
+        if last_only:
+            # 各系列の最終トークンの packed インデックス
+            idx, acc = [], 0
+            for n in q_seqlen:
+                acc += n
+                idx.append(acc - 1)
+            last_indices = torch.tensor(idx, device=token_values.device, dtype=torch.long)
+        return self.forward_with_attn_bias(token_values, attn_bias, cache, last_indices)
 
     @torch.no_grad()
     def forward(
@@ -878,6 +919,8 @@ def generate_custom(
     if prompt_len >= max_seq_len:
         raise ValueError(f"プロンプトが長すぎます ({prompt_len} >= max_seq_len {max_seq_len})")
 
+    transformer = model.model
+
     # 1. KVキャッシュ領域の事前割り当て（呼び出し側で使い回せるよう引数でも受け取る）
     if cache is None:
         cache = make_cache(
@@ -885,34 +928,30 @@ def generate_custom(
             length=max_seq_len,
             batch_size=1,
             device=device,
-            dtype=model.model.tok_embeddings.weight.dtype,
+            dtype=transformer.tok_embeddings.weight.dtype,
         )
 
     # --------------------------------------------------
     # 2. Prefill フェーズ
     # --------------------------------------------------
-    tokens_tensor = torch.tensor([prompt_tokens], device=device, dtype=torch.long)
-    start_pos = torch.tensor([0], device=device, dtype=torch.int32)
-
-    # [FIX] 元コードはここで cache / start_pos / kv_padding を渡していたつもりが、
-    # forward のシグネチャに存在せず **kwargs に落ちて捨てられていた。
-    # その結果 decode 側は毎回まっさらなキャッシュ・start_pos=0 で動き、
-    # 文脈を一切見ない（＝2トークン目以降が破綻する）状態だった。
-    outputs = model(
-        input_ids=tokens_tensor,
-        start_pos=start_pos,
+    # [FIX] BitnetForCausalLM.forward を経由すると、attention_mask のパッキング
+    # (bool マスク索引) と AttnBias 構築のための .item() / .tolist() で
+    # 1トークンあたり5〜6回のホスト同期が発生する。生成ループでは
+    # Transformer.forward_packed を直接叩き、系列長は Python の int で持つ。
+    tokens = torch.tensor(prompt_tokens, device=device, dtype=torch.long)
+    logits = transformer.forward_packed(
+        tokens,
+        q_seqlen=[prompt_len],
+        kv_seqlen=[prompt_len],
         cache=cache,
         kv_padding=max_seq_len,
-        num_logits_to_keep=1,
-        use_cache=True,
-        return_dict=True,
+        last_only=True,
     )
-    next_token = sample_next_token(
-        outputs.logits[0, -1, :], temperature=temperature, top_p=top_p
-    )
+    next_token = sample_next_token(logits[-1], temperature=temperature, top_p=top_p)
 
     generated_tokens: List[int] = []
     cur_pos = prompt_len
+    next_input = torch.empty(1, device=device, dtype=torch.long)  # 毎ステップ使い回す
 
     # --------------------------------------------------
     # 3. Decode フェーズ
@@ -933,21 +972,16 @@ def generate_custom(
             if any(s and s in partial for s in stop_strings):
                 break
 
-        next_input = torch.tensor([[next_token]], device=device, dtype=torch.long)
-        start_pos = torch.tensor([cur_pos], device=device, dtype=torch.int32)
-
-        outputs = model(
-            input_ids=next_input,
-            start_pos=start_pos,
+        next_input.fill_(next_token)
+        logits = transformer.forward_packed(
+            next_input,
+            q_seqlen=[1],
+            kv_seqlen=[cur_pos + 1],
             cache=cache,
             kv_padding=max_seq_len,
-            num_logits_to_keep=1,
-            use_cache=True,
-            return_dict=True,
+            last_only=True,
         )
-        next_token = sample_next_token(
-            outputs.logits[0, -1, :], temperature=temperature, top_p=top_p
-        )
+        next_token = sample_next_token(logits[-1], temperature=temperature, top_p=top_p)
         cur_pos += 1
 
     return generated_tokens
